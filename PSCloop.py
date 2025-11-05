@@ -9,21 +9,14 @@ from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
 from cothread import Sleep
 import os
-import warnings
 
 props = dict(boxstyle='round', facecolor='wheat', alpha=0.9)
 good = dict(boxstyle='round', facecolor='palegreen', alpha=0.9)
 bad = dict(boxstyle='round', facecolor='pink', alpha=0.9)
 
-os.environ['EPICS_CA_DEBUG'] = '0'
-os.environ['EPICS_CA_AUTO_ADDR_LIST'] = 'NO'
-os.environ['EPICS_CA_ADDR_LIST'] = '127.0.0.1'
-# Suppress all warnings
-#warnings.filterwarnings("ignore", category=UserWarning)
-
-# Or selectively suppress specific warning message
-#Ewarnings.filterwarnings("ignore", message="Identical process variable names on multiple servers")
-
+#os.environ['EPICS_CA_DEBUG'] = '0'
+#os.environ['EPICS_CA_AUTO_ADDR_LIST'] = 'NO'
+#os.environ['EPICS_CA_ADDR_LIST'] = '127.0.0.1'
 
 PSCsn = input('\nEnter PSC serial number: (Enter "H" for help, Default="009"):')
 if(PSCsn=="H"):
@@ -166,7 +159,9 @@ elements.append(im)
 ######################################################################
 # Start of the Big Loop!
 ######################################################################
-
+AteIgndChan = "PSCtest:Ignd:Channel-SP"
+caput(AteIgndChan,3)
+Sleep(1)
 for chan in range(1,(CHmax+1)):
 	CHprefix = "Chan"+str(chan)+":"
 	print("Top of Loop",chan,CHprefix)
