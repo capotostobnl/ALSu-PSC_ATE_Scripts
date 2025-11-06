@@ -160,6 +160,14 @@ elements.append(im)
 # Start of the Big Loop!
 ######################################################################
 AteIgndChan = "PSCtest:Ignd:Channel-SP"
+caput("PSCtest:CH1:Vmon:Gain-SP",0.5)
+caput("PSCtest:CH1:Imon:Gain-SP",0.25)
+caput("PSCtest:CH2:Vmon:Gain-SP",0.5)
+caput("PSCtest:CH2:Imon:Gain-SP",0.25)
+caput("PSCtest:CH3:Vmon:Gain-SP",0.5)
+caput("PSCtest:CH3:Imon:Gain-SP",0.25)
+caput("PSCtest:CH4:Vmon:Gain-SP",0.5)
+caput("PSCtest:CH4:Imon:Gain-SP",0.25)
 caput(AteIgndChan,3)
 Sleep(1)
 for chan in range(1,(CHmax+1)):
@@ -195,7 +203,8 @@ for chan in range(1,(CHmax+1)):
 	caput(AteDcctFault,0)   #Set ATE DCCT Fault to "NONE"
 	caput(AteIgndChan,(chan-1)) #Select Channel for Ignd Setting
 	Sleep(1)
-	caput(AteIgndVal,0.1)   #Set Ignd to something sensible, like 0.1A
+	IgndSP = 0.1
+	caput(AteIgndVal,IgndSP)   #Set Ignd to something sensible, like 0.1A
 	IgndSP = 0.1
 	Sleep(5)
 
@@ -395,7 +404,8 @@ for chan in range(1,(CHmax+1)):
 	DCCT1 = PVprefix+CHprefix+"DCCT1-I"
 	DCCT2 = PVprefix+CHprefix+"DCCT2-I"
 	DAC = PVprefix+CHprefix+"DAC-I"
-
+	RATE = PVprefix+CHprefix+"SF:AmpsperSec-SP"
+	caput(RATE,10)
 	caput(DacSP,0)
 	caput(ENB,1)
 	caput(PRK,1)
@@ -405,7 +415,13 @@ for chan in range(1,(CHmax+1)):
 	Sleep(5)
 	caput(PSMode,0)
 	caput(PRK,0)
-	SP = 10
+	if(CHmax==2):
+	    if(chan==1):
+	        SP = 30
+	    else:
+	        SP = 50
+	else:
+	    SP = 10
 	caput(DacSP,SP)
 	Sleep(10)
 	# Collect 1 minute of data:
@@ -456,7 +472,7 @@ for chan in range(1,(CHmax+1)):
 	ax1.grid(True)
 	ax1.set_xlabel("Samples")
 	ax1.set_ylabel("(Reading - Average) (mA)")
-	ax1.set_title("Loopback Stability (SP=10A)")
+	ax1.set_title("Loopback Stability (SP="+str(SP)+"A)")
 	mstr ="Loopback Avg: "+str(round(LRBavg,5))+"A"
 	ax1.text(0.02, 0.97,mstr,transform=ax1.transAxes, fontsize=10,verticalalignment='top', bbox=props)
 	if(LRBerr<0.050):
@@ -488,7 +504,7 @@ for chan in range(1,(CHmax+1)):
 	ax1.grid(True)
 	ax1.set_xlabel("Samples")
 	ax1.set_ylabel("(Reading - Average) (mA)")
-	ax1.set_title("DCCT1 Stability (SP=10A)")
+	ax1.set_title("DCCT1 Stability (SP="+str(SP)+"A)")
 	mstr ="DCCT1 Avg: "+str(round(D1RBavg,5))+"A"
 	ax1.text(0.02, 0.97,mstr,transform=ax1.transAxes, fontsize=10,verticalalignment='top', bbox=props)
 	print("D1RBerr = ",D1RBerr,D1RBavg,SP)
@@ -522,7 +538,7 @@ for chan in range(1,(CHmax+1)):
 	ax2.set_axisbelow(True)
 	ax1.set_xlabel("Samples")
 	ax1.set_ylabel("(Reading - Average) (mA)")
-	ax1.set_title("DCCT2 Stability (SP=10A)")
+	ax1.set_title("DCCT2 Stability (SP="+str(SP)+"A)")
 	mstr ="DCCT2 Avg: "+str(round(D2RBavg,5))+"A"
 	ax1.text(0.02, 0.97,mstr,transform=ax1.transAxes, fontsize=10,verticalalignment='top', bbox=props)
 	if(D2RBerr<0.050):
@@ -563,7 +579,7 @@ for chan in range(1,(CHmax+1)):
 	im = Image('Chan'+str(chan)+'_DCCT1_Stability.png',7*inch,3*inch)
 	elements.append(im)
 	elements.append(Spacer(width=1,height=0.1*inch))
-	im = Image('Chan'+str(chan)+'_DCCT1_Stability.png',7*inch,3*inch)
+	im = Image('Chan'+str(chan)+'_DCCT2_Stability.png',7*inch,3*inch)
 	elements.append(im)
 	elements.append(Spacer(width=1,height=0.1*inch))
 
@@ -587,7 +603,14 @@ for chan in range(1,(CHmax+1)):
 	caput(XMIN,0)       #Set Snapshot Min to 0
 	caput(XMAX,100000)  #Set Snapshot Max to 100000 10KHz Samples
 	caput(PSMode,3)     #Set Mode to Jump
-	caput(DacSP,10.05)  #Set DAC SP to 10.05 Amps (from 10.0 Amps)
+	if(CHmax==2):
+	    if(chan==1):
+	        SP = 30.05
+	    else:
+	        SP = 50.05
+	else:
+	    SP = 10.05
+	caput(DacSP,SP)  #Set DAC SP to 0.05 Amps Higher from the previous setting
 	Sleep(.1)
 	caput(Shot,1)       #Take the Snapshot.
 	Sleep(2)
@@ -767,6 +790,9 @@ for chan in range(1,(CHmax+1)):
 	ax1 = f.add_subplot(gs[0, 0:2])
 	ax2 = f.add_subplot(gs[0, 2])
 
+	IgndAvg = float(np.mean(GND))
+	print("####################IgndAvg=",IgndAvg,IgndSP)
+	Diff = abs(IgndSP - IgndAvg)
 	ax1.plot(GND)
 	ax1.grid(True)
 	ax1.set_xlabel("10KHz Samples")
@@ -774,7 +800,15 @@ for chan in range(1,(CHmax+1)):
 	ax1.set_title("IGND Jump Test")
 	mstr ="Ignd SP: "+str(round(IgndSP,3))+"A"
 	ax1.text(0.02, 0.97,mstr,transform=ax1.transAxes, fontsize=10,verticalalignment='top', bbox=props)
-		
+	mstr ="Ignd Wfm Avg: "+str(round(IgndAvg,3))+"A"
+	ax1.text(0.6, 0.97,mstr,transform=ax1.transAxes, fontsize=10,verticalalignment='top', bbox=props)
+	if(Diff>0.05):
+	    mstr ="Test: |IgndSP-IgndAvg|<50mA? : FAIL"	
+	    ax1.text(0.3, 0.07,mstr,transform=ax1.transAxes, fontsize=10,verticalalignment='top', bbox=bad)
+	else:
+	    mstr ="Test: |IgndSP-IgndAvg|<50mA? : PASS"
+	    ax1.text(0.3, 0.07,mstr,transform=ax1.transAxes, fontsize=10,verticalalignment='top', bbox=good)
+	    	
 	ax2.plot(GTRAN)
 	ax2.grid(True)
 	ax2.set_xlabel("10KHz Samples")
@@ -861,9 +895,20 @@ for chan in range(1,(CHmax+1)):
 
 	caput(PSMode,0)    #Set PS Mode to SMOOTH
 	caput(RATE,10)     #Set Ramp Rate to 10 Amps/Sec
-	caput(DacSP,-23.9) #Set DAC to -23.9 Amps
-	Sleep(10)           #Wait 10 Seconds for Ramp to Complete
-	caput(DacSP,23.9)  #Set DAC SP to +23.9 Amps
+	if(CHmax==2):
+	    if(chan==1):
+	        caput(DacSP,0) #Set DAC to 0 Amps
+	        Sleep(10) 
+	        caput(DacSP,49.9)  #Set DAC SP to +49.9 Amps
+	    else:
+	        caput(RATE,20)     #Set Ramp Rate to 20 Amps/Sec
+	        caput(DacSP,0) #Set DAC to 0 Amps
+	        Sleep(10) 
+	        caput(DacSP,99.9)  #Set DAC SP to +99.9 Amps
+	else:
+	    caput(DacSP,-23.9) #Set DAC to -23.9 Amps
+	    Sleep(10)           #Wait 10 Seconds for Ramp to Complete
+	    caput(DacSP,23.9)  #Set DAC SP to +23.9 Amps
 	Sleep(2)           #Wait 2 Seconds before taking Snapshot
 	caput(Shot,1)      #Take the Snapshot.
 	Sleep(2)
@@ -953,6 +998,8 @@ for chan in range(1,(CHmax+1)):
 	plt.pause(0.1)
 
 	f,ax = plt.subplots(figsize=(8,4))
+	IgndAvg = float(np.mean(GND))
+	Diff = abs(IgndSP - IgndAvg)
 	ax.plot(GND)
 	ax.grid(True)
 	ax.set_xlabel("10KHz Samples")
@@ -960,6 +1007,15 @@ for chan in range(1,(CHmax+1)):
 	ax.set_title("IGND Smooth Test")
 	mstr ="Ignd SP: "+str(round(IgndSP,3))+"A"
 	ax.text(0.02, 0.97,mstr,transform=ax.transAxes, fontsize=10,verticalalignment='top', bbox=props)
+	mstr ="Ignd Wfm Avg: "+str(round(IgndAvg,3))+"A"
+	ax.text(0.6, 0.97,mstr,transform=ax.transAxes, fontsize=10,verticalalignment='top', bbox=props)
+	if(Diff>0.05):
+	    mstr ="Test: |IgndSP-IgndAvg|<50mA? : FAIL"	
+	    ax.text(0.4, 0.07,mstr,transform=ax.transAxes, fontsize=10,verticalalignment='top', bbox=bad)
+	else:
+	    mstr ="Test: |IgndSP-IgndAvg|<50mA? : PASS"
+	    ax.text(0.4, 0.07,mstr,transform=ax.transAxes, fontsize=10,verticalalignment='top', bbox=good)
+	
 	plt.pause(0.1)
 	f.savefig('Chan'+str(chan)+'_IGND_Smooth.png')
 	plt.close(f)
@@ -1020,6 +1076,7 @@ for chan in range(1,(CHmax+1)):
 	elements.append(Spacer(width=1,height=0.1*inch))
 	im = Image('Chan'+str(chan)+'_SPARE_Smooth.png',7*inch,3*inch)
 	elements.append(im)
+	caput(DacSP,0) #Channel test complete.  Set DAC SP to 0 Amps
 
 ###############################################################################################
 # End of Report...Building....
