@@ -1,89 +1,216 @@
-""" Fast Orbit Feedback UDP Packet Test Scripts
-M. Capotosto 11/6/2025"""
+# fofb_daisy_packet_monotonic_test_Tom.py
+# FOFB Daisy / UDP RX check + report output
 
+import os
+from datetime import datetime
+from time import sleep
 import subprocess
+import shlex
 
-ip_address_list = ["10.0.142.100"]  # Set IP Addresses of all DUTs
-mac_address_list = ["00:11:22:33:44:55"]  # Set MAC Addresses of all DUTs
+import h5py
+from epics import caget, caput, PV
 
-NET_INTERFACE = "enp115s0"  # Set the network NET_INTERFACE to be used for the
-#                       # FOFB Loopback
+from reportlab.platypus import Table, Paragraph, Preformatted
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.styles import ParagraphStyle
 
-UDP_PORT = "12345"  # UDP Port number
+from report_generator import ReportContext
+from initialize_dut import DUT
 
-PACKET_COUNT = "1"  # Set the expected number of packets to be recieved during
-#                # the test.
+# -----------------------------
+# Small EPICS helpers
+# -----------------------------
 
-
-def arp_static_init(ip_address_list, mac_address_list):
-    for ip_address, mac_address in zip(ip_address_list, mac_address_list):
-        cmd = ["sudo", "arp", "-s", ip_address, mac_address]
-        try:
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
-            print(f"ARP static entry added successfully for {ip_address}")
-
-        except subprocess.CalledProcessError as e:
-            print(f"Error adding ARP entry. Command failed with return code "
-                  f"{e.returncode}")
-            print(f"Error output: {e.stderr}")
-
-
-def arp_static_destroy(ip_address_list):
-    """
-    Deletes static ARP entries added during the test using 'arp -d'.
-    """
-    print("\n--- Cleaning up Static ARP Entries ---")
-    for ip_address in ip_address_list:
-        cmd = ["sudo", "arp", "-d", ip_address]
-
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            if result.returncode == 0:
-                print(f"Removed static entry for {ip_address}")
-            else:
-                print(f"Warning: Failed to delete ARP entry for {ip_address}."
-                      f"Status: {result.stderr.strip()}")
-        except FileNotFoundError:
-            print("Error: 'arp' command not found during cleanup.")
-            return
-
-
-def capture_udp_packets(NET_INTERFACE, UDP_PORT, PACKET_COUNT):
-    # The tcpdump command
-    cmd = cmd = ["sudo", "tcpdump", "-i", NET_INTERFACE, "udp", "port",
-                 UDP_PORT, "-c", PACKET_COUNT, "-n", "-v"]
-#               # -C 5 kill after 5 packets received...
-
+def safe_caput(name, val, wait=True, timeout=5.0):
     try:
-        result = subprocess.run(
-            cmd, check=True,  # Raise Error for non-zero exit codes
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
+        return caput(name, val, wait=wait, timeout=timeout)
+    except Exception as e:
+        print(f"caput ERROR for {name} <- {val}: {e}")
+        return False
+
+def safe_caget(name, timeout=5.0, *, as_string: bool | None = None):
+    try:
+        if as_string is None:
+            return caget(name, timeout=timeout)
+        return caget(name, timeout=timeout, as_string=as_string)
+    except Exception as e:
+        print(f"caget ERROR for {name}: {e}")
+        return None
+
+def read_pv_array(name):
+    try:
+        pv = PV(name)
+        sleep(0.05)
+        arr = pv.get(as_numpy=True)
+        return None if arr is None else arr
+    except Exception as e:
+        print(f"read_pv_array ERROR for {name}: {e}")
+        return None
+
+# -----------------------------
+# tcpdump wrapper
+# -----------------------------
+
+def capture_udp_packets(iface="enp115s0", port=12345, timeout_s=10):
+    """
+    Capture ALL UDP packets on `port` for `timeout_s` seconds.
+    Returns: (status, out, err, returncode, cmd)
+    status = "PASS" if 'udp' appears in stdout, else "FAIL".
+    """
+    base = f"tcpdump -i {shlex.quote(iface)} udp port {int(port)} -vv -l -n"
+    cmd = f"sudo -n timeout {int(timeout_s)} {base}"
+    try:
+        res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    except Exception as e:
+        return "FAIL", "", str(e), 999, cmd
+    out = res.stdout or ""
+    err = res.stderr or ""
+    status = "PASS" if "udp" in out.lower() else "FAIL"
+    return status, out, err, res.returncode, cmd
+
+# -----------------------------
+# Main test entry point
+# -----------------------------
+
+def fofb_daisy_packet_monotonic_test(dut: DUT, ctx: ReportContext):
+    """
+    Adds FOFB TX config/verification and UDP RX capture results to the report.
+    """
+    NC = int(dut.num_channels)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    h5_path = os.path.join(
+        dut.raw_data_dir,
+        f"epics_test_{dut.PSCsn}_{dut.PVprefix}_{timestamp}.h5"
+    )
+
+    FOFB_IP_PV = f"{dut.PVprefix}FOFB:IPaddr-SP"
+    FOFB_FASTADDR_PVS = [
+        f"{dut.PVprefix}Chan1:FOFB:FastAddr-SP",
+        f"{dut.PVprefix}Chan2:FOFB:FastAddr-SP",
+        f"{dut.PVprefix}Chan3:FOFB:FastAddr-SP",
+        f"{dut.PVprefix}Chan4:FOFB:FastAddr-SP",
+    ]
+
+    centered_h2 = ParagraphStyle(
+        "CenteredH2",
+        parent=ctx.styles["Heading2"],
+        alignment=TA_CENTER,
+    )
+
+    with h5py.File(h5_path, "w") as h5:
+        h5.attrs["generated_by"] = "fofb_daisy_packet_monotonic_test.py"
+        h5.attrs["lab"] = f"{dut.PVprefix}"
+        h5.attrs["generated_at"] = datetime.now().isoformat()
+
+        bandval = safe_caget(f"{dut.PVprefix}Bandwidth-Mode", as_string=True)
+        if bandval is not None and str(bandval).strip().lower() == "fast":
+            ctx.elements.append(Paragraph(
+                "<b>FOFB TX test (Bandwidth-Mode = Fast)</b>",
+                centered_h2
+            ))
+            print("Performing FOFB test because Bandwidth-Mode == Fast")
+
+            # 0x0A451A37 == 10.69.26.55
+            safe_caput(FOFB_IP_PV, int(0x0A451A37))
+
+            for ch_i, pv in enumerate(FOFB_FASTADDR_PVS, start=1):
+                if ch_i > NC:
+                    break
+                safe_caput(pv, ch_i - 1)
+
+            for ch in range(1, min(4, NC) + 1):
+                safe_caput(f"{dut.PVprefix}Chan{ch}:DAC_OpMode-SP", 2)
+            sleep(5)
+
+            DAC_TARGET = 11.5
+            DAC_TOL = 0.1
+            ofc_table = [["PV", "Value", "Pass?"]]
+            all_pass = True
+
+            for ch in range(1, NC + 1):
+                pv = f"{dut.PVprefix}Chan{ch}:DAC-I"
+                val = safe_caget(pv)
+                status = "N/A"
+                try:
+                    fval = float(val)
+                    status = "PASS" if abs(fval - DAC_TARGET) <= DAC_TOL else "FAIL"
+                except Exception:
+                    arr = read_pv_array(pv)
+                    status = "PASS" if arr is not None else "FAIL"
+
+                ofc_table.append([pv, str(val), status])
+                if status != "PASS":
+                    all_pass = False
+                print(f"{pv}: {val} -> {status}")
+
+            t = Table(ofc_table, colWidths=[300, 150, 80])
+            t.setStyle([
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+                ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+            ])
+            for r in range(1, len(ofc_table)):
+                status = ofc_table[r][2]
+                t.setStyle([(
+                    'BACKGROUND', (0, r), (-1, r),
+                    colors.lightgreen if status == "PASS" else colors.red
+                )])
+            ctx.elements.append(t)
+
+        else:
+            ctx.elements.append(Paragraph(
+                "<b>FOFB test: SKIPPED (Bandwidth-Mode != Fast)</b>",
+                ctx.styles["Normal"]
+            ))
+            print("Skipping FOFB TX test; Bandwidth-Mode not 'Fast'.")
+
+        # ---- UDP RX packet test -------------------------------------------------
+        status, out, err, returncode, cmd = capture_udp_packets(
+            iface="enp115s0", port=12345, timeout_s=10
         )
 
-        print(f"\n\n***********************TCP Dump: \n {result.stdout}")
+        tcpdump_log = os.path.join(dut.raw_data_dir, "tcpdump_full.log")
+        try:
+            with open(tcpdump_log, "w", encoding="utf-8") as fh:
+                fh.write(f"Command:\n{cmd}\n\n")
+                fh.write(f"Return code: {returncode}\n\n")
+                fh.write("STDOUT:\n")
+                fh.write(out if out else "(no stdout)")
+                fh.write("\n\nSTDERR:\n")
+                fh.write(err if err else "(no stderr)")
+        except Exception as e:
+            print(f"Could not write tcpdump log: {e}")
 
-        print(f"\nPacket capture finished successfully. Output:\n"
-              f"{result.stderr}")
+        ctx.elements.append(Paragraph("<b>UDP RX Packet Test</b>", centered_h2))
 
-        # Set the success flag
-        test_passed = True
+        code_style = ParagraphStyle(
+            "CodePreview",
+            parent=ctx.styles.get("Code", ctx.styles["Normal"]),
+            fontName="Courier",
+            fontSize=8,
+            leading=9,
+        )
+        preview = (out or "").strip()
+        preview = "\n".join(preview.splitlines()[:40]) or "(no packets captured)"
+        ctx.elements.append(Preformatted(preview, code_style))
+        ctx.elements.append(Paragraph(
+            f"(Full tcpdump log saved to {tcpdump_log})",
+            ctx.styles["Normal"]
+        ))
 
-    except subprocess.CalledProcessError as e:
-        # This catches if tcpdump failed to run or exited with an error code
-        print(f"\nError running tcpdump (Exit Code {e.returncode}):")
-        print(f"Error output: {e.stderr}")
+        udp_table = [["Test", "Result"], ["UDP RX FOFB", status]]
+        t_udp = Table(udp_table, colWidths=[300, 150])
+        t_udp.setStyle([
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+        ])
+        t_udp.setStyle([
+            ('BACKGROUND', (0, 1), (-1, 1),
+             colors.lightgreen if status == "PASS" else colors.red)
+        ])
+        ctx.elements.append(t_udp)
 
-    except FileNotFoundError:
-        print("\nError: tcpdump command not found. Ensure it is installed and"
-              " in the system PATH.")
-
-    print(f"\nTest Result: {'PASS' if test_passed else 'FAIL'}")
-    return test_passed
-
-
-if __name__ == "__main__":
-    arp_static_init(ip_address_list, mac_address_list)
-    capture_udp_packets(NET_INTERFACE, UDP_PORT, PACKET_COUNT)
-    arp_static_destroy(ip_address_list)
+    return ctx.elements

@@ -1,41 +1,61 @@
-"""Carry out jump tests..."""
+"""Jump Test
 
+Modified M. Capotosto 11-9-2025
+Original: T. Caracappy
+"""
+import os
 from time import sleep
-from epics import caget, caput
-from reportlab.platypus import Paragraph, PageBreak, Spacer, Image
-from reportlab.lib.units import inch
-from reportlab.lib.enums import TA_CENTER
-from reportlab.lib.styles import ParagraphStyle
-import matplotlib.pyplot as plt
-from matplotlib.gridspec import GridSpec
+from epics import caget, caput, ca
 import numpy as np
+from matplotlib import pyplot as plt
+from matplotlib.gridspec import GridSpec
+from reportlab.platypus import Image, PageBreak
+from reportlab.lib.units import inch
+from reportlab.platypus import Paragraph, Spacer
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.enums import TA_CENTER
+
+from report_generator import ReportContext
+from initialize_dut import DUT
 
 
-def jump_test(pv_prefix, ch_prefix, chan, props, styles, i_gnd_sp):
-    """Carry out jump test testing"""
-    dac_sp = pv_prefix + ch_prefix + "DAC_SetPt-SP"
-    Shot = pv_prefix + ch_prefix + "SS:Trig:Usr"
-    DACwfm = pv_prefix + ch_prefix + "USR:DAC-Wfm"
-    D1wfm = pv_prefix + ch_prefix + "USR:DCCT1-Wfm"
-    D2wfm = pv_prefix + ch_prefix + "USR:DCCT2-Wfm"
-    ERRwfm = pv_prefix + ch_prefix + "USR:Error-Wfm"
-    REGwfm = pv_prefix + ch_prefix + "USR:Reg-Wfm"
-    VOLTwfm = pv_prefix + ch_prefix + "USR:Volt-Wfm"
-    GNDwfm = pv_prefix + ch_prefix + "USR:Gnd-Wfm"
-    SPRwfm = pv_prefix + ch_prefix + "USR:Spare-Wfm"
-    XMAX = pv_prefix + ch_prefix + "SS:WFM-Xmax"
-    XMIN = pv_prefix + ch_prefix + "SS:WFM-Xmin"
-    ACTV = pv_prefix + ch_prefix + "UsrTrigActive-I"
-    ps_mode = pv_prefix + ch_prefix + "DAC_OpMode-SP"
+def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
+    # Jump test PVs:
+    CHprefix = "Chan" + str(chan) + ":"
+    Shot = dut.PVprefix + CHprefix + "SS:Trig:Usr"
+    DACwfm = dut.PVprefix + CHprefix + "USR:DAC-Wfm"
+    D1wfm = dut.PVprefix + CHprefix + "USR:DCCT1-Wfm"
+    D2wfm = dut.PVprefix + CHprefix + "USR:DCCT2-Wfm"
+    ERRwfm = dut.PVprefix + CHprefix + "USR:Error-Wfm"
+    REGwfm = dut.PVprefix + CHprefix + "USR:Reg-Wfm"
+    VOLTwfm = dut.PVprefix + CHprefix + "USR:Volt-Wfm"
+    GNDwfm = dut.PVprefix + CHprefix + "USR:Gnd-Wfm"
+    SPRwfm = dut.PVprefix + CHprefix + "USR:Spare-Wfm"
+    XMAX = dut.PVprefix + CHprefix + "SS:WFM-Xmax"
+    XMIN = dut.PVprefix + CHprefix + "SS:WFM-Xmin"
+    ACTV = dut.PVprefix + CHprefix + "UsrTrigActive-I"
+    DacSP = dut.PVprefix + CHprefix + "DAC_SetPt-SP"
+    PSMode = dut.PVprefix + CHprefix + "DAC_OpMode-SP"
 
     caput(XMIN, 0)  # Set Snapshot Min to 0
     caput(XMAX, 100000)  # Set Snapshot Max to 100000 10KHz Samples
-    caput(ps_mode, 3)  # Set Mode to Jump
-    caput(dac_sp, 10.05)  # Set DAC SP to 10.05 Amps (from 10.0 Amps)
+    caput(PSMode, 3, wait=True)  # Set Mode to Jump
+    ca.flush_io()
+
+    if dut.num_channels == 2:
+        if chan == 1:
+            SP = 30.05
+        else:
+            SP = 50.05
+    else:
+        SP = 10.05
+    caput(DacSP, SP, wait=True)  # Set DAC SP to 0.05 Amps Higher from the previous
+    #                 # setting
+    ca.flush_io()
     sleep(0.1)
-    caput(Shot, 1)  # Take the Snapshot.
+    caput(Shot, 1, wait=True)  # Take the Snapshot.
     sleep(2)
-    while caget(ACTV) > 0:
+    while caget(ACTV) > 0:  # type: ignore
         sleep(1)
         print("Wating for Jump Snapshot data.....")
     DAC = caget(DACwfm)
@@ -47,7 +67,7 @@ def jump_test(pv_prefix, ch_prefix, chan, props, styles, i_gnd_sp):
     GND = caget(GNDwfm)
     SPR = caget(SPRwfm)
 
-    Tindex = np.argmax(ERR)
+    Tindex = np.argmax(ERR)  # type: ignore
     DACTRAN = []
     ERRTRAN = []
     D1TRAN = []
@@ -59,21 +79,21 @@ def jump_test(pv_prefix, ch_prefix, chan, props, styles, i_gnd_sp):
 
     if Tindex > 500 and Tindex < 98000:
         for i in range((Tindex - 500), (Tindex + 500)):
-            DACTRAN.append(DAC[i])
-            ERRTRAN.append(ERR[i])
-            D1TRAN.append(D1[i])
-            D2TRAN.append(D2[i])
-            REGTRAN.append(REG[i])
-            VTRAN.append(VOLT[i])
-            GTRAN.append(GND[i])
-            STRAN.append(SPR[i])
+            DACTRAN.append(DAC[i])  # type: ignore
+            ERRTRAN.append(ERR[i])  # type: ignore
+            D1TRAN.append(D1[i])  # type: ignore
+            D2TRAN.append(D2[i])  # type: ignore
+            REGTRAN.append(REG[i])  # type: ignore
+            VTRAN.append(VOLT[i])  # type: ignore
+            GTRAN.append(GND[i])  # type: ignore
+            STRAN.append(SPR[i])  # type: ignore
 
     f = plt.figure(figsize=(8, 4))
     gs = GridSpec(1, 3, figure=f)
     ax1 = f.add_subplot(gs[0, 0:2])
     ax2 = f.add_subplot(gs[0, 2])
 
-    ax1.plot(DAC)
+    ax1.plot(DAC)  # type: ignore
     ax1.grid(True)
     ax1.set_xlabel("10KHz Samples")
     ax1.set_ylabel("Current (A)")
@@ -86,7 +106,10 @@ def jump_test(pv_prefix, ch_prefix, chan, props, styles, i_gnd_sp):
     ax2.set_title("DAC Transition")
     plt.tight_layout()
     plt.pause(0.1)
-    f.savefig("Chan" + str(chan) + "_DAC_Jump.png")
+
+    save_path = os.path.join(dut.raw_data_dir, f"Chan{chan}"
+                             "_DAC_Jump.png")
+    f.savefig(save_path)
     plt.close(f)
     f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
@@ -96,7 +119,7 @@ def jump_test(pv_prefix, ch_prefix, chan, props, styles, i_gnd_sp):
     ax1 = f.add_subplot(gs[0, 0:2])
     ax2 = f.add_subplot(gs[0, 2])
 
-    ax1.plot(ERR)
+    ax1.plot(ERR)  # type: ignore
     ax1.grid(True)
     ax1.set_xlabel("10KHz Samples")
     ax1.set_ylabel("Current (A)")
@@ -109,7 +132,9 @@ def jump_test(pv_prefix, ch_prefix, chan, props, styles, i_gnd_sp):
     ax2.set_title("Error Transition")
     plt.tight_layout()
     plt.pause(0.1)
-    f.savefig("Chan" + str(chan) + "_ERROR_Jump.png")
+    save_path = os.path.join(dut.raw_data_dir,
+                             f"Chan{chan}_ERROR_Jump.png")
+    f.savefig(save_path)
     plt.close(f)
     f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
@@ -119,7 +144,7 @@ def jump_test(pv_prefix, ch_prefix, chan, props, styles, i_gnd_sp):
     ax1 = f.add_subplot(gs[0, 0:2])
     ax2 = f.add_subplot(gs[0, 2])
 
-    ax1.plot(D1)
+    ax1.plot(D1)  # type: ignore
     ax1.grid(True)
     ax1.set_xlabel("10KHz Samples")
     ax1.set_ylabel("Current (A)")
@@ -132,7 +157,9 @@ def jump_test(pv_prefix, ch_prefix, chan, props, styles, i_gnd_sp):
     ax2.set_title("DCCT1 Transition")
     plt.tight_layout()
     plt.pause(0.1)
-    f.savefig("Chan" + str(chan) + "_DCCT1_Jump.png")
+    save_path = os.path.join(dut.raw_data_dir,
+                             f"Chan{chan}_DCCT1_Jump.png")
+    f.savefig(save_path)
     plt.close(f)
     f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
@@ -142,7 +169,7 @@ def jump_test(pv_prefix, ch_prefix, chan, props, styles, i_gnd_sp):
     ax1 = f.add_subplot(gs[0, 0:2])
     ax2 = f.add_subplot(gs[0, 2])
 
-    ax1.plot(D2)
+    ax1.plot(D2)  # type: ignore
     ax1.grid(True)
     ax1.set_xlabel("10KHz Samples")
     ax1.set_ylabel("Current (A)")
@@ -155,7 +182,9 @@ def jump_test(pv_prefix, ch_prefix, chan, props, styles, i_gnd_sp):
     ax2.set_title("DCCT2 Transition")
     plt.tight_layout()
     plt.pause(0.1)
-    f.savefig("Chan" + str(chan) + "_DCCT2_Jump.png")
+    save_path = os.path.join(dut.raw_data_dir,
+                             f"Chan{chan}_DCCT2_Jump.png")
+    f.savefig(save_path)
     plt.close(f)
     f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
@@ -165,7 +194,7 @@ def jump_test(pv_prefix, ch_prefix, chan, props, styles, i_gnd_sp):
     ax1 = f.add_subplot(gs[0, 0:2])
     ax2 = f.add_subplot(gs[0, 2])
 
-    ax1.plot(REG)
+    ax1.plot(REG)  # type: ignore
     ax1.grid(True)
     ax1.set_xlabel("10KHz Samples")
     ax1.set_ylabel("Current (A)")
@@ -178,7 +207,9 @@ def jump_test(pv_prefix, ch_prefix, chan, props, styles, i_gnd_sp):
     ax2.set_title("REG Transition")
     plt.tight_layout()
     plt.pause(0.1)
-    f.savefig("Chan" + str(chan) + "_REG_Jump.png")
+    save_path = os.path.join(dut.raw_data_dir,
+                             f"Chan{chan}_REG_Jump.png")
+    f.savefig(save_path)
     plt.close(f)
     f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
@@ -188,7 +219,7 @@ def jump_test(pv_prefix, ch_prefix, chan, props, styles, i_gnd_sp):
     ax1 = f.add_subplot(gs[0, 0:2])
     ax2 = f.add_subplot(gs[0, 2])
 
-    ax1.plot(VOLT)
+    ax1.plot(VOLT)  # type: ignore
     ax1.grid(True)
     ax1.set_xlabel("10KHz Samples")
     ax1.set_ylabel("Voltage (V)")
@@ -201,7 +232,9 @@ def jump_test(pv_prefix, ch_prefix, chan, props, styles, i_gnd_sp):
     ax2.set_title("VOLT Transition")
     plt.tight_layout()
     plt.pause(0.1)
-    f.savefig("Chan" + str(chan) + "_VOLT_Jump.png")
+    save_path = os.path.join(dut.raw_data_dir,
+                             f"Chan{chan}_VOLT_Jump.png")
+    f.savefig(save_path)
     plt.close(f)
     f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
@@ -211,12 +244,16 @@ def jump_test(pv_prefix, ch_prefix, chan, props, styles, i_gnd_sp):
     ax1 = f.add_subplot(gs[0, 0:2])
     ax2 = f.add_subplot(gs[0, 2])
 
-    ax1.plot(GND)
+    IgndSP = 0.1
+    IgndAvg = float(np.mean(GND))  # type: ignore
+    print("####################IgndAvg=", IgndAvg, IgndSP)
+    Diff = abs(IgndSP - IgndAvg)
+    ax1.plot(GND)  # type: ignore
     ax1.grid(True)
     ax1.set_xlabel("10KHz Samples")
     ax1.set_ylabel("Current (A)")
     ax1.set_title("IGND Jump Test")
-    mstr = "Ignd SP: " + str(round(i_gnd_sp, 3)) + "A"
+    mstr = "Ignd SP: " + str(round(IgndSP, 3)) + "A"
     ax1.text(
         0.02,
         0.97,
@@ -224,8 +261,40 @@ def jump_test(pv_prefix, ch_prefix, chan, props, styles, i_gnd_sp):
         transform=ax1.transAxes,
         fontsize=10,
         verticalalignment="top",
-        bbox=props,
+        bbox=ctx.theme.props,
     )
+    mstr = "Ignd Wfm Avg: " + str(round(IgndAvg, 3)) + "A"
+    ax1.text(
+        0.6,
+        0.97,
+        mstr,
+        transform=ax1.transAxes,
+        fontsize=10,
+        verticalalignment="top",
+        bbox=ctx.theme.props,
+    )
+    if Diff > 0.05:
+        mstr = "Test: |IgndSP-IgndAvg|<50mA? : FAIL"
+        ax1.text(
+            0.3,
+            0.07,
+            mstr,
+            transform=ax1.transAxes,
+            fontsize=10,
+            verticalalignment="top",
+            bbox=ctx.theme.bad,
+        )
+    else:
+        mstr = "Test: |IgndSP-IgndAvg|<50mA? : PASS"
+        ax1.text(
+            0.3,
+            0.07,
+            mstr,
+            transform=ax1.transAxes,
+            fontsize=10,
+            verticalalignment="top",
+            bbox=ctx.theme.good,
+        )
 
     ax2.plot(GTRAN)
     ax2.grid(True)
@@ -234,7 +303,9 @@ def jump_test(pv_prefix, ch_prefix, chan, props, styles, i_gnd_sp):
     ax2.set_title("IGND Transition")
     plt.tight_layout()
     plt.pause(0.1)
-    f.savefig("Chan" + str(chan) + "_IGND_Jump.png")
+    save_path = os.path.join(dut.raw_data_dir,
+                             f"Chan{chan}_IGND_Jump.png")
+    f.savefig(save_path)
     plt.close(f)
     f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
@@ -244,7 +315,7 @@ def jump_test(pv_prefix, ch_prefix, chan, props, styles, i_gnd_sp):
     ax1 = f.add_subplot(gs[0, 0:2])
     ax2 = f.add_subplot(gs[0, 2])
 
-    ax1.plot(SPR)
+    ax1.plot(SPR)  # type: ignore
     ax1.grid(True)
     ax1.set_xlabel("10KHz Samples")
     ax1.set_ylabel("Current (A)")
@@ -257,51 +328,60 @@ def jump_test(pv_prefix, ch_prefix, chan, props, styles, i_gnd_sp):
     ax2.set_title("SPARE Transition")
     plt.tight_layout()
     plt.pause(0.1)
-    f.savefig("Chan" + str(chan) + "_SPARE_Jump.png")
+    save_path = os.path.join(dut.raw_data_dir,
+                             f"Chan{chan}_SPARE_Jump.png")
+    f.savefig(save_path)
     plt.close(f)
     f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
-
+    base_style = ctx.styles["Normal"]
     mstr = "Jump Test Results:"
-    p_style = ParagraphStyle(
+    Pstyle = ParagraphStyle(
         "Custom",
-        parent=styles["Normal"],
+        parent=base_style,
         fontName="Helvetica",
-        fontSize=16,  # 👈 Set font size here
+        fontSize=16,
         leading=20,  # Optional: line spacing
-        alignment=TA_CENTER,  # 👈 Centers the paragraph horizontally
+        alignment=TA_CENTER,
     )
-    elements_local = []
-    title = Paragraph(mstr, p_style)
-    elements_local.append(PageBreak())
-    elements_local.append(title)
-    im = Image("Chan" + str(chan) + "_DAC_Jump.png", 7 * inch, 3 * inch)
-    elements_local.append(im)
-    elements_local.append(Spacer(width=1, height=0.1 * inch))
-    im = Image("Chan" + str(chan) + "_DCCT1_Jump.png", 7 * inch, 3 * inch)
-    elements_local.append(im)
-    elements_local.append(Spacer(width=1, height=0.1 * inch))
-    im = Image("Chan" + str(chan) + "_DCCT1_Jump.png", 7 * inch, 3 * inch)
-    elements_local.append(im)
-    elements_local.append(Spacer(width=1, height=0.1 * inch))
 
-    elements_local.append(PageBreak())
-    elements_local.append(title)
-    im = Image("Chan" + str(chan) + "_ERROR_Jump.png", 7 * inch, 3 * inch)
-    elements_local.append(im)
-    elements_local.append(Spacer(width=1, height=0.1 * inch))
-    im = Image("Chan" + str(chan) + "_REG_Jump.png", 7 * inch, 3 * inch)
-    elements_local.append(im)
-    elements_local.append(Spacer(width=1, height=0.1 * inch))
-    im = Image("Chan" + str(chan) + "_VOLT_Jump.png", 7 * inch, 3 * inch)
-    elements_local.append(im)
-    elements_local.append(Spacer(width=1, height=0.1 * inch))
+    title = Paragraph(mstr, Pstyle)
+    section.append(PageBreak())
+    section.append(title)
+    im = Image(os.path.join(dut.raw_data_dir,
+               f"Chan{chan}_DAC_Jump.png"), 7 * inch, 3 * inch)
+    section.append(im)
+    section.append(Spacer(width=1, height=0.1 * inch))
+    im = Image(os.path.join(dut.raw_data_dir,
+               f"Chan{chan}_DCCT1_Jump.png"), 7 * inch, 3 * inch)
+    section.append(im)
+    section.append(Spacer(width=1, height=0.1 * inch))
+    im = Image(os.path.join(dut.raw_data_dir,
+               f"Chan{chan}_DCCT2_Jump.png"), 7 * inch, 3 * inch)
+    section.append(im)
+    section.append(Spacer(width=1, height=0.1 * inch))
 
-    elements_local.append(PageBreak())
-    elements_local.append(title)
-    im = Image("Chan" + str(chan) + "_IGND_Jump.png", 7 * inch, 3 * inch)
-    elements_local.append(im)
-    elements_local.append(Spacer(width=1, height=0.1 * inch))
-    im = Image("Chan" + str(chan) + "_SPARE_Jump.png", 7 * inch, 3 * inch)
-    elements_local.append(im)
-    return elements_local
+    section.append(PageBreak())
+    section.append(title)
+    im = Image(os.path.join(dut.raw_data_dir,
+               f"Chan{chan}_ERROR_Jump.png"), 7 * inch, 3 * inch)
+    section.append(im)
+    section.append(Spacer(width=1, height=0.1 * inch))
+    im = Image(os.path.join(dut.raw_data_dir,
+               f"Chan{chan}_REG_Jump.png"), 7 * inch, 3 * inch)
+    section.append(im)
+    section.append(Spacer(width=1, height=0.1 * inch))
+    im = Image(os.path.join(dut.raw_data_dir,
+               f"Chan{chan}_VOLT_Jump.png"), 7 * inch, 3 * inch)
+    section.append(im)
+    section.append(Spacer(width=1, height=0.1 * inch))
+
+    section.append(PageBreak())
+    section.append(title)
+    im = Image(os.path.join(dut.raw_data_dir,
+               f"Chan{chan}_IGND_Jump.png"), 7 * inch, 3 * inch)
+    section.append(im)
+    section.append(Spacer(width=1, height=0.1 * inch))
+    im = Image(os.path.join(dut.raw_data_dir,
+               f"Chan{chan}_SPARE_Jump.png"), 7 * inch, 3 * inch)
+    section.append(im)
