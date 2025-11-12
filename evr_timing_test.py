@@ -15,8 +15,8 @@ from report_generator import ReportContext
 
 
 def evr_timing_test(dut: DUT, ctx: ReportContext) -> None:
-    EvrTS = dut.PVprefix + "TS-S-I"
-    EVRdate = dut.PVprefix + "Timestamp-I.VALA"
+    EvrTS = dut.pv_prefix + "TS-S-I"
+    EVRdate = dut.pv_prefix + "Timestamp-I.VALA"
 
     TS = []
     Telapse = []

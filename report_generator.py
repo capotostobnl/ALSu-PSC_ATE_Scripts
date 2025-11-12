@@ -85,7 +85,7 @@ def _cover_table(dut: DUT) -> Table:
     tdata = [
         ["PSC Functional Test Results", 0],
         ["Power Supply Controller Configuration", 0],
-        ["Serial Number", dut.PSCsn],
+        ["Serial Number", dut.psc_sn],
         ["Number of Channels", dut.num_channels],
         ["Resolution", dut.resolution],
         ["Bandwidth", dut.bandwidth],
@@ -115,7 +115,7 @@ def _cover_table(dut: DUT) -> Table:
 
 def _make_filename(dut: DUT) -> str:
     return (f"{dut.num_channels}ch_{dut.resolution[:2]}"
-            f"{dut.bandwidth[:1]}_SN{dut.PSCsn}_"
+            f"{dut.bandwidth[:1]}_SN{dut.psc_sn}_"
             f"{dut.dir_timestamp}.pdf")
 
 

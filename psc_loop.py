@@ -1,3 +1,9 @@
+"""Main module for PSC Testing.
+
+M. Capotosto 11/11/2025
+"""
+from ate_epics import ATE
+from psc_epics import PSC
 from initialize_dut import DUT
 from report_generator import start_report, finalize_report, \
     channel_section
@@ -7,15 +13,8 @@ from ate_fault_tests import ate_fault_tests
 from ps_regulation_test import ps_regulation_test
 from jump_test import jump_test
 from smooth_ramp_test import smooth_ramp_test
-from fofb_daisy_packet_monotonic_test_Tom import \
+from fofb_test import \
     fofb_daisy_packet_monotonic_test
-
-
-# os.environ['EPICS_CA_DEBUG'] = '0'
-# os.environ['EPICS_CA_AUTO_ADDR_LIST'] = 'NO'
-# os.environ['EPICS_CA_ADDR_LIST'] = '127.0.0.1 10.69.26.1 \
-#    10.69.26.30 10.69.26.31 10.69.26.32 10.69.26.33 10.69.26.34 \
-#        10.69.26.35 10.69.26.36'
 
 if __name__ == "__main__":
 
@@ -23,6 +22,9 @@ if __name__ == "__main__":
     # Get user inputs...
     ##############################################################
     dut = DUT()  # Create DUT class instance
+
+    psc = PSC(prefix=dut.pv_prefix, ch_fmt="Chan{ch}:")
+    ate = ATE(prefix="PSCtest:", ch_fmt="Chan{ch}:")
 
     # Prompt the user for PSC Info
     # Create Shipment directory, Report Gen Directory, and
@@ -40,7 +42,7 @@ if __name__ == "__main__":
             print("\n\n*******************************************"
                   f"\nBeginning Channel {chan} ATE Fault Tests..."
                   "\n*******************************************")
-            ate_fault_tests(dut, sec, chan)
+            ate_fault_tests(dut, ate, sec, chan)
 
             print("\n\n*******************************************"
                   f"\nBeginning Channel {chan} Regulation Tests..."
@@ -56,7 +58,6 @@ if __name__ == "__main__":
                   f"\nBeginning Channel {chan} Smooth Ramp Tests..."
                   "\n*******************************************")
             smooth_ramp_test(dut, sec, chan, ctx)
-
 
     if dut.bandwidth == "Fast":
         print("\n\n*******************************************"

@@ -82,15 +82,15 @@ def fofb_daisy_packet_monotonic_test(dut: DUT, ctx: ReportContext):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     h5_path = os.path.join(
         dut.raw_data_dir,
-        f"epics_test_{dut.PSCsn}_{dut.PVprefix}_{timestamp}.h5"
+        f"epics_test_{dut.psc_sn}_{dut.pv_prefix}_{timestamp}.h5"
     )
 
-    FOFB_IP_PV = f"{dut.PVprefix}FOFB:IPaddr-SP"
+    FOFB_IP_PV = f"{dut.pv_prefix}FOFB:IPaddr-SP"
     FOFB_FASTADDR_PVS = [
-        f"{dut.PVprefix}Chan1:FOFB:FastAddr-SP",
-        f"{dut.PVprefix}Chan2:FOFB:FastAddr-SP",
-        f"{dut.PVprefix}Chan3:FOFB:FastAddr-SP",
-        f"{dut.PVprefix}Chan4:FOFB:FastAddr-SP",
+        f"{dut.pv_prefix}Chan1:FOFB:FastAddr-SP",
+        f"{dut.pv_prefix}Chan2:FOFB:FastAddr-SP",
+        f"{dut.pv_prefix}Chan3:FOFB:FastAddr-SP",
+        f"{dut.pv_prefix}Chan4:FOFB:FastAddr-SP",
     ]
 
     centered_h2 = ParagraphStyle(
@@ -101,10 +101,10 @@ def fofb_daisy_packet_monotonic_test(dut: DUT, ctx: ReportContext):
 
     with h5py.File(h5_path, "w") as h5:
         h5.attrs["generated_by"] = "fofb_daisy_packet_monotonic_test.py"
-        h5.attrs["lab"] = f"{dut.PVprefix}"
+        h5.attrs["lab"] = f"{dut.pv_prefix}"
         h5.attrs["generated_at"] = datetime.now().isoformat()
 
-        bandval = safe_caget(f"{dut.PVprefix}Bandwidth-Mode", as_string=True)
+        bandval = safe_caget(f"{dut.pv_prefix}Bandwidth-Mode", as_string=True)
         if bandval is not None and str(bandval).strip().lower() == "fast":
             ctx.elements.append(Paragraph(
                 "<b>FOFB TX test (Bandwidth-Mode = Fast)</b>",
@@ -121,7 +121,7 @@ def fofb_daisy_packet_monotonic_test(dut: DUT, ctx: ReportContext):
                 safe_caput(pv, ch_i - 1)
 
             for ch in range(1, min(4, NC) + 1):
-                safe_caput(f"{dut.PVprefix}Chan{ch}:DAC_OpMode-SP", 2)
+                safe_caput(f"{dut.pv_prefix}Chan{ch}:DAC_OpMode-SP", 2)
             sleep(5)
 
             DAC_TARGET = 11.5
@@ -130,7 +130,7 @@ def fofb_daisy_packet_monotonic_test(dut: DUT, ctx: ReportContext):
             all_pass = True
 
             for ch in range(1, NC + 1):
-                pv = f"{dut.PVprefix}Chan{ch}:DAC-I"
+                pv = f"{dut.pv_prefix}Chan{ch}:DAC-I"
                 val = safe_caget(pv)
                 status = "N/A"
                 try:

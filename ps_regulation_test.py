@@ -21,18 +21,18 @@ from initialize_dut import DUT
 
 def ps_regulation_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
     CHprefix = "Chan" + str(chan) + ":"
-    PWR = dut.PVprefix + CHprefix + "DigOut_ON1-SP"
-    ENB = dut.PVprefix + CHprefix + "DigOut_ON2-SP"
-    PRK = dut.PVprefix + CHprefix + "DigOut_Park-SP"
+    PWR = dut.pv_prefix + CHprefix + "DigOut_ON1-SP"
+    ENB = dut.pv_prefix + CHprefix + "DigOut_ON2-SP"
+    PRK = dut.pv_prefix + CHprefix + "DigOut_Park-SP"
 
-    DacSP = dut.PVprefix + CHprefix + "DAC_SetPt-SP"
-    PSMode = dut.PVprefix + CHprefix + "DAC_OpMode-SP"
-    EXT = dut.PVprefix + CHprefix + "DigOut_Spare-SP"  # noqa: F841
-    ON = dut.PVprefix + CHprefix + "DigIn-I.B0"
-    DCCT1 = dut.PVprefix + CHprefix + "DCCT1-I"
-    DCCT2 = dut.PVprefix + CHprefix + "DCCT2-I"
-    DAC = dut.PVprefix + CHprefix + "DAC-I"
-    RATE = dut.PVprefix + CHprefix + "SF:AmpsperSec-SP"
+    DacSP = dut.pv_prefix + CHprefix + "DAC_SetPt-SP"
+    PSMode = dut.pv_prefix + CHprefix + "DAC_OpMode-SP"
+    EXT = dut.pv_prefix + CHprefix + "DigOut_Spare-SP"  # noqa: F841
+    ON = dut.pv_prefix + CHprefix + "DigIn-I.B0"
+    DCCT1 = dut.pv_prefix + CHprefix + "DCCT1-I"
+    DCCT2 = dut.pv_prefix + CHprefix + "DCCT2-I"
+    DAC = dut.pv_prefix + CHprefix + "DAC-I"
+    RATE = dut.pv_prefix + CHprefix + "SF:AmpsperSec-SP"
     caput(RATE, 10)
     caput(DacSP, 0)
     caput(ENB, 1)
