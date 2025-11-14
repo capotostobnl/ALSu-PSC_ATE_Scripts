@@ -2,13 +2,13 @@
 DUT setup utilities for ALSu PSC automated testing.
 
 This module provides a `DUT` dataclass that:
-- Prompts the operator for PSC identifiers (shipment number, 
+- Prompts the operator for PSC identifiers (shipment number,
   serial number, PV prefix).
 
-- Queries the PSC over EPICS to capture configuration (channels, 
+- Queries the PSC over EPICS to capture configuration (channels,
   resolution, bandwidth, polarity).
 
-- Creates a per-shipment report directory and a timestamped 
+- Creates a per-shipment report directory and a timestamped
   raw-data subdirectory.
 """
 import os

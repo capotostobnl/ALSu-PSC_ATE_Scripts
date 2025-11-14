@@ -64,8 +64,27 @@ class PSC:
             print(f"caput ERROR {self.pv(suffix, ch=ch)} <- {value}: {e}")
             return False
 
-# ---------- Convenience for your common channel PVs ----------
+# ---------- DUT Info -------------
+
+    def get_num_channels(self) -> int:
+        raw = self.safe_get("NumChannels-Mode", as_string=True)
+        return int(str(raw)[:1])
+
+    def get_resolution(self) -> str:
+        raw = self.safe_get("Resolution-Mode", as_string=True)
+        return (str(raw))
+
+    def get_bandwidth(self) -> str:
+        raw = self.safe_get("Bandwidth-Mode", as_string=True)
+        return str(raw)[:1]
+
+    def get_polarity(self) -> str:
+        raw = self.safe_get("Polarity-Mode", as_string=True)
+        return (str(raw))
+
+# ---------- Channel PVs ----------
     # Digital outs / modes / setpoints
+
     def set_power_on1(self, ch: int, val: int | bool) -> bool:
         return self.put("DigOut_ON1-SP", int(val), ch=ch)
 

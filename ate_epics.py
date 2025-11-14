@@ -141,7 +141,7 @@ class ATE:
         """$(P)CAL:State-SP (bo) — OFF/ON."""
         return self.put("CAL:State-SP", _as_cal_state(state))
 
-    def set_polarity(self, pol: Polarity | int) -> bool:
+    def set_polarity(self, pol: Polarity | str | int) -> bool:
         """$(P)Polarity-SP (bo) — BPC/UPC."""
         return self.put("Polarity-SP", _as_polarity(pol))
 

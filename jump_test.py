@@ -49,8 +49,8 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
             SP = 50.05
     else:
         SP = 10.05
-    caput(DacSP, SP, wait=True)  # Set DAC SP to 0.05 Amps Higher from the previous
-    #                 # setting
+    caput(DacSP, SP, wait=True)  # Set DAC SP to 0.05 Amps Higher from
+    #                 #the previous setting
     ca.flush_io()
     sleep(0.1)
     caput(Shot, 1, wait=True)  # Take the Snapshot.

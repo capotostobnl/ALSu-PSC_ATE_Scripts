@@ -34,7 +34,7 @@ if __name__ == "__main__":
     ctx, pdf_path = start_report(dut)
 
     evr_timing_test(dut, ctx)
-    ate_init()
+    ate_init(ate, dut)
 
     for chan in range(1, dut.num_channels+1):
         with channel_section(ctx, chan) as sec:

@@ -17,6 +17,7 @@ def _check_fault(dut: DUT, chan: int, mask: int, fault_str: str,
                  tdata: list, tcolor: list, poll_int: float = 1.0,
                  set_fault_v: bool = False, max_tries: int = 10) \
                     -> tuple[list, list]:
+    assert dut.psc is not None
     count = 0
     error = 0
     while True:
@@ -65,6 +66,7 @@ def _check_fault(dut: DUT, chan: int, mask: int, fault_str: str,
 def ate_fault_tests(dut: DUT, ate: ATE, section: list, chan: int):
     """Main module for carrying out ATE Fault Testing"""
     print(chan)
+    assert dut.psc is not None
 
     # DUT control via PSC adapter
     dut.psc.set_dac_setpt(chan, 0)
@@ -80,7 +82,7 @@ def ate_fault_tests(dut: DUT, ate: ATE, section: list, chan: int):
 #    AteIgndVal = "PSCtest:Ignd-SP"
 
     # Set ATE DCCT Fault to "NONE"
-    ate.set_fault_channel(0)
+    ate.set_dcct_fault_channel(0)
 
     # Select Channel for Ignd Setting
     ate.set_ignd_channel(chan)
@@ -135,6 +137,7 @@ def ate_fault_tests(dut: DUT, ate: ATE, section: list, chan: int):
 
     def _read_pv_int(pv_suffix: str) -> int:
         """dut.psc.safe_get → int, None→0 for safe bit ops."""
+        assert dut.psc is not None
         val = dut.psc.safe_get(pv_suffix, ch=chan)
         return int(val) if val is not None else 0
 
@@ -198,7 +201,7 @@ def ate_fault_tests(dut: DUT, ate: ATE, section: list, chan: int):
     mask = 0x40
     fault_str = "DCCT"
 
-    def _clear_dcct_fault():
+    def _clear_dcct_fault(bit: int, val: bool) -> None:
         """Clears DCCT fault by setting fault channel to NONE."""
         ate.set_dcct_fault_channel(0)
 
