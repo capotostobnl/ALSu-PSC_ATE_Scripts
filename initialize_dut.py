@@ -156,7 +156,7 @@ class DUT:
             psc_sn = f"{psc_sn:04d}"
             return psc_sn
 
-    def _get_psc_pv_prefix(self):
+    def _get_psc_pv_prefix(self) -> str:
         """Prompt for PSC #, to make PV Prefix"""
         while True:
             psc_num = input("Enter the PSC Number under test "

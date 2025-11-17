@@ -5,7 +5,6 @@ Original: T. Caracappy
 """
 import os
 from time import sleep
-from epics import caget, caput, ca
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.gridspec import GridSpec
@@ -20,27 +19,12 @@ from initialize_dut import DUT
 
 
 def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
-    # Jump test PVs:
-    CHprefix = "Chan" + str(chan) + ":"
-    Shot = dut.pv_prefix + CHprefix + "SS:Trig:Usr"
-    DACwfm = dut.pv_prefix + CHprefix + "USR:DAC-Wfm"
-    D1wfm = dut.pv_prefix + CHprefix + "USR:DCCT1-Wfm"
-    D2wfm = dut.pv_prefix + CHprefix + "USR:DCCT2-Wfm"
-    ERRwfm = dut.pv_prefix + CHprefix + "USR:Error-Wfm"
-    REGwfm = dut.pv_prefix + CHprefix + "USR:Reg-Wfm"
-    VOLTwfm = dut.pv_prefix + CHprefix + "USR:Volt-Wfm"
-    GNDwfm = dut.pv_prefix + CHprefix + "USR:Gnd-Wfm"
-    SPRwfm = dut.pv_prefix + CHprefix + "USR:Spare-Wfm"
-    XMAX = dut.pv_prefix + CHprefix + "SS:WFM-Xmax"
-    XMIN = dut.pv_prefix + CHprefix + "SS:WFM-Xmin"
-    ACTV = dut.pv_prefix + CHprefix + "UsrTrigActive-I"
-    DacSP = dut.pv_prefix + CHprefix + "DAC_SetPt-SP"
-    PSMode = dut.pv_prefix + CHprefix + "DAC_OpMode-SP"
-
-    caput(XMIN, 0)  # Set Snapshot Min to 0
-    caput(XMAX, 100000)  # Set Snapshot Max to 100000 10KHz Samples
-    caput(PSMode, 3, wait=True)  # Set Mode to Jump
-    ca.flush_io()
+    assert dut.psc is not None
+    WfmPV = dut.psc.WfmPV
+    dut.psc.set_wfm_xmin(chan, 0)
+    dut.psc.set_wfm_xmax(chan, 100000)
+    dut.psc.set_op_mode(chan, 3)  # Set Mode to Jump
+    dut.psc.flush_io()
 
     if dut.num_channels == 2:
         if chan == 1:
@@ -49,23 +33,22 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
             SP = 50.05
     else:
         SP = 10.05
-    caput(DacSP, SP, wait=True)  # Set DAC SP to 0.05 Amps Higher from
-    #                 #the previous setting
-    ca.flush_io()
+    dut.psc.set_dac_setpt(chan, SP)
+    dut.psc.flush_io()
     sleep(0.1)
-    caput(Shot, 1, wait=True)  # Take the Snapshot.
+    dut.psc.user_shot(chan)
     sleep(2)
-    while caget(ACTV) > 0:  # type: ignore
+    while dut.psc.is_user_trig_active(chan) > 0:
         sleep(1)
         print("Wating for Jump Snapshot data.....")
-    DAC = caget(DACwfm)
-    D1 = caget(D1wfm)
-    D2 = caget(D2wfm)
-    ERR = caget(ERRwfm)
-    REG = caget(REGwfm)
-    VOLT = caget(VOLTwfm)
-    GND = caget(GNDwfm)
-    SPR = caget(SPRwfm)
+    DAC = dut.psc.get_wfm(chan, WfmPV.DAC)
+    D1 = dut.psc.get_wfm(chan, WfmPV.DCCT1)
+    D2 = dut.psc.get_wfm(chan, WfmPV.DCCT2)
+    ERR = dut.psc.get_wfm(chan, WfmPV.ERR)
+    REG = dut.psc.get_wfm(chan, WfmPV.REG)
+    VOLT = dut.psc.get_wfm(chan, WfmPV.VOLT)
+    GND = dut.psc.get_wfm(chan, WfmPV.GND)
+    SPR = dut.psc.get_wfm(chan, WfmPV.SPARE)
 
     Tindex = np.argmax(ERR)  # type: ignore
     DACTRAN = []

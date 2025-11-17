@@ -6,7 +6,6 @@ Original: T. Caracappa
 
 import os
 from time import sleep
-from epics import caget, caput
 import numpy as np
 from matplotlib import pyplot as plt
 from reportlab.platypus import Image, PageBreak
@@ -17,56 +16,45 @@ from reportlab.lib.enums import TA_CENTER
 
 from report_generator import ReportContext
 from initialize_dut import DUT
+from ate_epics import ATE
 
 
-def smooth_ramp_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
-    CHprefix = "Chan" + str(chan) + ":"
-    RATE = dut.pv_prefix + CHprefix + "SF:AmpsperSec-SP"
-    Shot = dut.pv_prefix + CHprefix + "SS:Trig:Usr"
-    DACwfm = dut.pv_prefix + CHprefix + "USR:DAC-Wfm"
-    D1wfm = dut.pv_prefix + CHprefix + "USR:DCCT1-Wfm"
-    D2wfm = dut.pv_prefix + CHprefix + "USR:DCCT2-Wfm"
-    ERRwfm = dut.pv_prefix + CHprefix + "USR:Error-Wfm"
-    REGwfm = dut.pv_prefix + CHprefix + "USR:Reg-Wfm"
-    VOLTwfm = dut.pv_prefix + CHprefix + "USR:Volt-Wfm"
-    GNDwfm = dut.pv_prefix + CHprefix + "USR:Gnd-Wfm"
-    SPRwfm = dut.pv_prefix + CHprefix + "USR:Spare-Wfm"
-    ACTV = dut.pv_prefix + CHprefix + "UsrTrigActive-I"
-    DacSP = dut.pv_prefix + CHprefix + "DAC_SetPt-SP"
-    PSMode = dut.pv_prefix + CHprefix + "DAC_OpMode-SP"
-    AteIgndVal = "PSCtest:Ignd-SP"
+def smooth_ramp_test(dut: DUT, ate: ATE, section: list,
+                     chan: int, ctx: ReportContext):
+    assert dut.psc is not None
+    WfmPV = dut.psc.WfmPV
+    dut.psc.set_op_mode(chan, 0)  # Set PS Mode to SMOOTH
+    dut.psc.set_rate(0, 10)  # Set Ramp Rate to 10 Amps/Sec
 
-    caput(PSMode, 0)  # Set PS Mode to SMOOTH
-    caput(RATE, 10)  # Set Ramp Rate to 10 Amps/Sec
     if dut.num_channels == 2:
         if chan == 1:
-            caput(DacSP, 0)  # Set DAC to 0 Amps
+            dut.psc.set_dac_setpt(chan, 0)  # Set DAC to 0 Amps
             sleep(10)
-            caput(DacSP, 49.9)  # Set DAC SP to +49.9 Amps
+            dut.psc.set_dac_setpt(chan, 49.9)  # Set DAC SP to +49.9 Amps
         else:
-            caput(RATE, 20)  # Set Ramp Rate to 20 Amps/Sec
-            caput(DacSP, 0)  # Set DAC to 0 Amps
+            dut.psc.set_rate(chan, 20)  # Set Ramp Rate to 20 Amps/Sec
+            dut.psc.set_dac_setpt(chan, 0)  # Set DAC to 0 Amps
             sleep(10)
-            caput(DacSP, 99.9)  # Set DAC SP to +99.9 Amps
+            dut.psc.set_dac_setpt(chan, 99.9)  # Set DAC SP to +99.9 Amps
     else:
-        caput(DacSP, -23.9)  # Set DAC to -23.9 Amps
+        dut.psc.set_dac_setpt(chan, -23.9)  # Set DAC to -23.9 Amps
         sleep(10)  # Wait 10 Seconds for Ramp to Complete
-        caput(DacSP, 23.9)  # Set DAC SP to +23.9 Amps
+        dut.psc.set_dac_setpt(chan, 23.9)  # Set DAC SP to +23.9 Amps
     sleep(2)  # Wait 2 Seconds before taking Snapshot
-    caput(Shot, 1)  # Take the Snapshot.
+    dut.psc.user_shot(chan)  # Take the Snapshot.
     sleep(2)
-    while caget(ACTV) > 0:  # type: ignore
+    while dut.psc.is_user_trig_active(chan) > 0:
         sleep(1)
         print("Wating for Smooth Snapshot data.....")
 
-    DAC = caget(DACwfm)
-    D1 = caget(D1wfm)
-    D2 = caget(D2wfm)
-    ERR = caget(ERRwfm)
-    REG = caget(REGwfm)
-    VOLT = caget(VOLTwfm)
-    GND = caget(GNDwfm)
-    SPR = caget(SPRwfm)
+    DAC = dut.psc.get_wfm(chan, WfmPV.DAC)
+    D1 = dut.psc.get_wfm(chan, WfmPV.DCCT1)
+    D2 = dut.psc.get_wfm(chan, WfmPV.DCCT2)
+    ERR = dut.psc.get_wfm(chan, WfmPV.ERR)
+    REG = dut.psc.get_wfm(chan, WfmPV.REG)
+    VOLT = dut.psc.get_wfm(chan, WfmPV.VOLT)
+    GND = dut.psc.get_wfm(chan, WfmPV.GND)
+    SPR = dut.psc.get_wfm(chan, WfmPV.SPARE)
 
     f, ax = plt.subplots(figsize=(8, 4))
     ax.plot(DAC)  # type: ignore
@@ -153,7 +141,8 @@ def smooth_ramp_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
     plt.pause(0.1)
 
     IgndSP = 0.1
-    caput(AteIgndVal, IgndSP)
+    ate.set_ignd_channel(chan)
+    ate.set_ignd_value(IgndSP)
     IgndSP = 0.1
 
     f, ax = plt.subplots(figsize=(8, 4))
@@ -281,4 +270,4 @@ def smooth_ramp_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
     im = Image(os.path.join(dut.raw_data_dir,
                f"Chan{chan}_SPARE_Smooth.png"), 7 * inch, 3 * inch)
     section.append(im)
-    caput(DacSP, 0)  # Channel test complete.  Set DAC SP to 0 Amps
+    dut.psc.set_dac_setpt(chan, 0)

@@ -3,7 +3,8 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Optional
-from epics import caget, caput
+from epics import caget, caput, ca
+from enum import Enum
 
 
 @dataclass
@@ -23,6 +24,26 @@ class PSC:
     prefix: str
     ch_fmt: str = "Chan{ch}:"
     timeout: float = 5.0
+
+    def __init__(self, prefix: str, ch_fmt: str = "Chan{ch}:",
+                 timeout: float = 5.0):
+        self.prefix = prefix
+        self.ch_fmt = ch_fmt
+        self.timeout = timeout
+
+    def flush_io(self) -> None:
+        """Flush all pending async writes to server"""
+        ca.flush_io()
+
+    class WfmPV(str, Enum):
+        DAC = "DAC"
+        DCCT1 = "DCCT1"
+        DCCT2 = "DCCT2"
+        ERR = "ERR"
+        REG = "REG"
+        VOLT = "VOLT"
+        GND = "GND"
+        SPARE = "SPARE"
 
     # ---------- PV building ----------
     def ch_prefix(self, ch: int) -> str:
@@ -94,11 +115,15 @@ class PSC:
     def set_park(self, ch: int, val: int | bool) -> bool:
         return self.put("DigOut_Park-SP", int(val), ch=ch)
 
+    def set_digout_spare(self, ch: int, val: int | bool) -> bool:
+        """Set DigOut_Spare-SP"""
+        return self.put("DigOut_Spare-SP", int(val), ch=ch)
+
     def set_dac_setpt(self, ch: int, amps: float) -> bool:
-        return self.put("DAC_SetPt-SP", amps, ch=ch)
+        return self.put("DAC_SetPt-SP", amps, ch=ch, wait=True)
 
     def set_op_mode(self, ch: int, mode: int | str) -> bool:
-        return self.put("DAC_OpMode-SP", mode, ch=ch)
+        return self.put("DAC_OpMode-SP", mode, ch=ch, wait=True)
 
     def set_rate(self, ch: int, rate: float) -> bool:
         return self.put("SF:AmpsperSec-SP", rate, ch=ch)
@@ -108,10 +133,14 @@ class PSC:
 
     # Triggers / status
     def user_shot(self, ch: int) -> bool:
-        return self.put("SS:Trig:Usr", 1, ch=ch)
+        return self.put("SS:Trig:Usr", 1, ch=ch, wait=True)
 
-    def is_user_trig_active(self, ch: int) -> int | None:
-        return self.safe_get("UsrTrigActive-I", ch=ch)
+    def is_user_trig_active(self, ch: int) -> int:
+        """Return 1 if user trigger active, 0 if not or if read fails."""
+        val = self.safe_get("UsrTrigActive-I", ch=ch)
+        if val is None:
+            return 0
+        return int(val)
 
     # Waveforms (return just the PV names if your code passes them into other
     # libs)
@@ -145,6 +174,20 @@ class PSC:
     def pv_wfm_xmin(self, ch: int) -> str:
         return self.pv("SS:WFM-Xmin", ch=ch)
 
+    def get_wfm(self, ch: int, pv: WfmPV):
+        suffix_map = {
+            self.WfmPV.DAC:   "USR:DAC-Wfm",
+            self.WfmPV.DCCT1: "USR:DCCT1-Wfm",
+            self.WfmPV.DCCT2: "USR:DCCT2-Wfm",
+            self.WfmPV.ERR:   "USR:Error-Wfm",
+            self.WfmPV.REG:   "USR:Reg-Wfm",
+            self.WfmPV.VOLT:  "USR:Volt-Wfm",
+            self.WfmPV.GND:   "USR:Gnd-Wfm",
+            self.WfmPV.SPARE: "USR:Spare-Wfm",
+        }
+        suffix = suffix_map[pv]
+        return self.safe_get(suffix, ch=ch)
+
     # Non-channel PVs on the DUT
     def pv_ts_scalar(self) -> str:
         return self.pv("TS-S-I")
@@ -164,3 +207,27 @@ class PSC:
 
     def get_latched_faults(self, ch: int):
         return self.get("FaultsLat-I", ch=ch)
+
+    def get_dig_in_b0(self, ch: int) -> int | None:
+        """Read DigIn-I.B0"""
+        return self.safe_get("DigIn-I.B0", ch=ch)
+
+    def get_dcct1(self, ch: int) -> float | None:
+        """Read DCCT1-I"""
+        return self.safe_get("DCCT1-I", ch=ch)
+
+    def get_dcct2(self, ch: int) -> float | None:
+        """Read DCCT2-I"""
+        return self.safe_get("DCCT2-I", ch=ch)
+
+    def get_dac(self, ch: int) -> float | None:
+        """Read DAC-I"""
+        return self.safe_get("DAC-I", ch=ch)
+
+    def set_wfm_xmin(self, ch: int, value: float) -> bool:
+        """Set the Xmin waveform value for a channel."""
+        return self.put("SS:WFM-Xmin", value, ch=ch)
+
+    def set_wfm_xmax(self, ch: int, value: float) -> bool:
+        """Set the Xmax waveform value for a channel."""
+        return self.put("SS:WFM-Xmax", value, ch=ch)

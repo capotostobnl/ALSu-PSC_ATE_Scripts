@@ -60,12 +60,21 @@ def _check_fault(dut: DUT, chan: int, mask: int, fault_str: str,
     sleep(1)
     dut.psc.clear_faults(chan, 0)
     sleep(1)
+    # Append the clear result to tdata and tcolor
+    live_raw = dut.psc.get_live_faults(chan)
+    lat_raw = dut.psc.get_latched_faults(chan)
+    if live_raw == 0 and lat_raw == 0:
+        tdata.append([f"Fault #{fault_str} Successfully Cleared", "PASS"])
+        tcolor.append(0)
+    else:
+        tdata.append([f"Fault #{fault_str} Successfully Cleared", "FAIL"])
+        tcolor.append(1)
     return tdata, tcolor
 
 
 def ate_fault_tests(dut: DUT, ate: ATE, section: list, chan: int):
     """Main module for carrying out ATE Fault Testing"""
-    print(chan)
+    print(f"Beginning Channel {chan}: ")
     assert dut.psc is not None
 
     # DUT control via PSC adapter
@@ -134,12 +143,6 @@ def ate_fault_tests(dut: DUT, ate: ATE, section: list, chan: int):
         print("\n\nFault Clear: FAILED")
         tdata.append(["All Faults Successfully Cleared", "FAIL"])
         tcolor.append(1)
-
-    def _read_pv_int(pv_suffix: str) -> int:
-        """dut.psc.safe_get → int, None→0 for safe bit ops."""
-        assert dut.psc is not None
-        val = dut.psc.safe_get(pv_suffix, ch=chan)
-        return int(val) if val is not None else 0
 
     # --------------------------------------------------------------------
     # Test Fault 1

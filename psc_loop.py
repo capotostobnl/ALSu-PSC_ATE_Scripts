@@ -2,6 +2,7 @@
 
 M. Capotosto 11/11/2025
 """
+import debugpy
 from ate_epics import ATE
 from psc_epics import PSC
 from initialize_dut import DUT
@@ -16,15 +17,16 @@ from smooth_ramp_test import smooth_ramp_test
 from fofb_test import \
     fofb_daisy_packet_monotonic_test
 
+
 if __name__ == "__main__":
+
+    ate = ATE(prefix="PSCtest:", ch_fmt="CH{ch}:")
+    # psc = PSC(prefix=dut.pv_prefix, ch_fmt="Chan{ch}:")
 
     ##############################################################
     # Get user inputs...
     ##############################################################
     dut = DUT()  # Create DUT class instance
-
-    psc = PSC(prefix=dut.pv_prefix, ch_fmt="Chan{ch}:")
-    ate = ATE(prefix="PSCtest:", ch_fmt="Chan{ch}:")
 
     # Prompt the user for PSC Info
     # Create Shipment directory, Report Gen Directory, and
@@ -57,7 +59,7 @@ if __name__ == "__main__":
             print("\n\n*******************************************"
                   f"\nBeginning Channel {chan} Smooth Ramp Tests..."
                   "\n*******************************************")
-            smooth_ramp_test(dut, sec, chan, ctx)
+            smooth_ramp_test(dut, ate, sec, chan, ctx)
 
     if dut.bandwidth == "Fast":
         print("\n\n*******************************************"

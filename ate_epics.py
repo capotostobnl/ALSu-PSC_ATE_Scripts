@@ -65,10 +65,10 @@ def _as_cal_state(value: int | str | bool) -> int:
 def _as_polarity(value: int | str) -> int:
     """BPC->0, UPC->1; integers pass (0/1)."""
     if isinstance(value, str):
-        v = value.strip().upper()
-        if v == "BPC":
+        v = value.strip()
+        if (v == "BPC" or v == "Bipolar"):
             return 0
-        if v == "UPC":
+        if (v == "UPC" or v == "Unipolar"):
             return 1
         raise ValueError("Polarity must be 'BPC' or 'UPC' (or 0/1).")
     if value in (0, 1):
@@ -102,8 +102,8 @@ class ATE:
         return f"{self.prefix}{self._ch(ch)}{suffix}"
 
     # ---------------- I/O wrappers ----------------
-    def get(self, suffix: str, *, ch: Optional[int] = None, as_string:
-            bool = False,
+    def get(self, suffix: str, *, ch: Optional[int] = None,
+            as_string: bool = False,
             timeout: Optional[float] = None) -> Any:
         return caget(self.pv(suffix, ch=ch), as_string=as_string,
                      timeout=timeout or self.timeout)
@@ -115,8 +115,9 @@ class ATE:
 
     # Safe variants (log to stdout; don't raise)
     def safe_get(self, suffix: str, *, ch: Optional[int] = None,
-                 as_string: bool = False, timeout: Optional[float]
-                 = None) -> Any:
+                 as_string: bool = False,
+                 timeout: Optional[float] = None) -> Any:
+
         try:
             return self.get(suffix, ch=ch, as_string=as_string,
                             timeout=timeout)
