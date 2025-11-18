@@ -4,7 +4,6 @@ M. Capotosto 11/11/2025
 """
 
 from ate_epics import ATE
-from psc_epics import PSC
 from initialize_dut import DUT
 from report_generator import start_report, finalize_report, \
     channel_section
