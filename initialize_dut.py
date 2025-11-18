@@ -2,13 +2,13 @@
 DUT setup utilities for ALSu PSC automated testing.
 
 This module provides a `DUT` dataclass that:
-- Prompts the operator for PSC identifiers (shipment number, 
+- Prompts the operator for PSC identifiers (shipment number,
   serial number, PV prefix).
 
-- Queries the PSC over EPICS to capture configuration (channels, 
+- Queries the PSC over EPICS to capture configuration (channels,
   resolution, bandwidth, polarity).
 
-- Creates a per-shipment report directory and a timestamped 
+- Creates a per-shipment report directory and a timestamped
   raw-data subdirectory.
 """
 import os
@@ -156,7 +156,7 @@ class DUT:
             psc_sn = f"{psc_sn:04d}"
             return psc_sn
 
-    def _get_psc_pv_prefix(self):
+    def _get_psc_pv_prefix(self) -> str:
         """Prompt for PSC #, to make PV Prefix"""
         while True:
             psc_num = input("Enter the PSC Number under test "

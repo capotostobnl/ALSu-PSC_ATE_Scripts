@@ -5,7 +5,6 @@ Original: T. Caracappa
 """
 import os
 from time import sleep
-from epics import caget, caput
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.gridspec import GridSpec
@@ -20,29 +19,18 @@ from initialize_dut import DUT
 
 
 def ps_regulation_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
-    CHprefix = "Chan" + str(chan) + ":"
-    PWR = dut.pv_prefix + CHprefix + "DigOut_ON1-SP"
-    ENB = dut.pv_prefix + CHprefix + "DigOut_ON2-SP"
-    PRK = dut.pv_prefix + CHprefix + "DigOut_Park-SP"
-
-    DacSP = dut.pv_prefix + CHprefix + "DAC_SetPt-SP"
-    PSMode = dut.pv_prefix + CHprefix + "DAC_OpMode-SP"
-    EXT = dut.pv_prefix + CHprefix + "DigOut_Spare-SP"  # noqa: F841
-    ON = dut.pv_prefix + CHprefix + "DigIn-I.B0"
-    DCCT1 = dut.pv_prefix + CHprefix + "DCCT1-I"
-    DCCT2 = dut.pv_prefix + CHprefix + "DCCT2-I"
-    DAC = dut.pv_prefix + CHprefix + "DAC-I"
-    RATE = dut.pv_prefix + CHprefix + "SF:AmpsperSec-SP"
-    caput(RATE, 10)
-    caput(DacSP, 0)
-    caput(ENB, 1)
-    caput(PRK, 1)
-    caput(PWR, 1)
+    assert dut.psc is not None
+    print(f"Preparing PSC Channel {chan} for Regulation test...")
+    dut.psc.set_rate(chan, 10)
+    dut.psc.set_dac_setpt(chan, 0)
+    dut.psc.set_enable_on2(chan, 1)
+    dut.psc.set_park(chan, 1)
+    dut.psc.set_power_on1(chan, 1)
     sleep(1)
-    ONstat = caget(ON)  # noqa: F841
-    sleep(5)
-    caput(PSMode, 0)
-    caput(PRK, 0)
+    # ONstat = dut.psc.get_dig_in_b0(chan)
+    # sleep(5)
+    dut.psc.set_op_mode(chan, 0)
+    dut.psc.set_park(chan, 0)
     if dut.num_channels == 2:
         if chan == 1:
             SP = 30
@@ -50,22 +38,27 @@ def ps_regulation_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
             SP = 50
     else:
         SP = 10
-    caput(DacSP, SP)
+    dut.psc.set_dac_setpt(chan, SP)
     sleep(10)
     # Collect 1 minute of data:
+    print(f"Preparing to collect 60 seconds of data for Channel {chan}")
     LRB = []
     D1RB = []
     D2RB = []
     f, ax = plt.subplots(3, 1, figsize=(6, 9.5))
     plt.ion()
+    print("*******************************************\n")
+    print(f"Channel {chan}: ")
     for i in range(0, 180):
-        v_dac = caget(DAC)
-        v_dcct1 = caget(DCCT1)
-        v_dcct2 = caget(DCCT2)
+        print(f"Collecting Regulation Data for Channel {chan} "
+              f"datapoint {i} of 180...")
+        v_dac = dut.psc.get_dac(chan)
+        v_dcct1 = dut.psc.get_dcct1(chan)
+        v_dcct2 = dut.psc.get_dcct2(chan)
         X = [v_dac, v_dcct1, v_dcct2]
-        LRB.append(X[0])  # type: ignore
-        D1RB.append(X[1])  # type: ignore
-        D2RB.append(X[2])  # type: ignore
+        LRB.append(X[0])
+        D1RB.append(X[1])
+        D2RB.append(X[2])
         ax[0].clear()
         ax[1].clear()
         ax[2].clear()

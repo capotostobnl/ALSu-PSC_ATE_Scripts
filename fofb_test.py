@@ -22,12 +22,14 @@ from initialize_dut import DUT
 # Small EPICS helpers
 # -----------------------------
 
+
 def safe_caput(name, val, wait=True, timeout=5.0):
     try:
         return caput(name, val, wait=wait, timeout=timeout)
     except Exception as e:
         print(f"caput ERROR for {name} <- {val}: {e}")
         return False
+
 
 def safe_caget(name, timeout=5.0, *, as_string: bool | None = None):
     try:
@@ -37,6 +39,7 @@ def safe_caget(name, timeout=5.0, *, as_string: bool | None = None):
     except Exception as e:
         print(f"caget ERROR for {name}: {e}")
         return None
+
 
 def read_pv_array(name):
     try:
@@ -51,6 +54,7 @@ def read_pv_array(name):
 # -----------------------------
 # tcpdump wrapper
 # -----------------------------
+
 
 def capture_udp_packets(iface="enp115s0", port=12345, timeout_s=10):
     """
@@ -72,6 +76,7 @@ def capture_udp_packets(iface="enp115s0", port=12345, timeout_s=10):
 # -----------------------------
 # Main test entry point
 # -----------------------------
+
 
 def fofb_daisy_packet_monotonic_test(dut: DUT, ctx: ReportContext):
     """
@@ -127,23 +132,25 @@ def fofb_daisy_packet_monotonic_test(dut: DUT, ctx: ReportContext):
             DAC_TARGET = 11.5
             DAC_TOL = 0.1
             ofc_table = [["PV", "Value", "Pass?"]]
-            all_pass = True
 
             for ch in range(1, NC + 1):
                 pv = f"{dut.pv_prefix}Chan{ch}:DAC-I"
                 val = safe_caget(pv)
                 status = "N/A"
-                try:
-                    fval = float(val)
-                    status = "PASS" if abs(fval - DAC_TARGET) <= DAC_TOL else "FAIL"
-                except Exception:
-                    arr = read_pv_array(pv)
-                    status = "PASS" if arr is not None else "FAIL"
+                if val is None:
+                    status = "FAIL PV RETURN NONE"
+                else:
+                    try:
+                        fval = float(val)
+                        status = "PASS" if abs(fval - DAC_TARGET) <= DAC_TOL \
+                            else "FAIL"
+                    except Exception:
+                        arr = read_pv_array(pv)
+                        status = "PASS" if arr is not None else "FAIL"
 
                 ofc_table.append([pv, str(val), status])
                 if status != "PASS":
-                    all_pass = False
-                print(f"{pv}: {val} -> {status}")
+                    print(f"{pv}: {val} -> {status}")
 
             t = Table(ofc_table, colWidths=[300, 150, 80])
             t.setStyle([
@@ -166,7 +173,7 @@ def fofb_daisy_packet_monotonic_test(dut: DUT, ctx: ReportContext):
             ))
             print("Skipping FOFB TX test; Bandwidth-Mode not 'Fast'.")
 
-        # ---- UDP RX packet test -------------------------------------------------
+        # ---- UDP RX packet test ---------------------------------------------
         status, out, err, returncode, cmd = capture_udp_packets(
             iface="enp115s0", port=12345, timeout_s=10
         )
@@ -183,7 +190,8 @@ def fofb_daisy_packet_monotonic_test(dut: DUT, ctx: ReportContext):
         except Exception as e:
             print(f"Could not write tcpdump log: {e}")
 
-        ctx.elements.append(Paragraph("<b>UDP RX Packet Test</b>", centered_h2))
+        ctx.elements.append(Paragraph("<b>UDP RX Packet Test</b>",
+                                      centered_h2))
 
         code_style = ParagraphStyle(
             "CodePreview",
@@ -193,7 +201,8 @@ def fofb_daisy_packet_monotonic_test(dut: DUT, ctx: ReportContext):
             leading=9,
         )
         preview = (out or "").strip()
-        preview = "\n".join(preview.splitlines()[:40]) or "(no packets captured)"
+        preview = "\n".join(preview.splitlines()[:40]) or "(no packets \
+            captured)"
         ctx.elements.append(Preformatted(preview, code_style))
         ctx.elements.append(Paragraph(
             f"(Full tcpdump log saved to {tcpdump_log})",

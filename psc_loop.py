@@ -2,8 +2,8 @@
 
 M. Capotosto 11/11/2025
 """
+
 from ate_epics import ATE
-from psc_epics import PSC
 from initialize_dut import DUT
 from report_generator import start_report, finalize_report, \
     channel_section
@@ -16,15 +16,15 @@ from smooth_ramp_test import smooth_ramp_test
 from fofb_test import \
     fofb_daisy_packet_monotonic_test
 
+
 if __name__ == "__main__":
+
+    ate = ATE(prefix="PSCtest:", ch_fmt="CH{ch}:")
 
     ##############################################################
     # Get user inputs...
     ##############################################################
     dut = DUT()  # Create DUT class instance
-
-    psc = PSC(prefix=dut.pv_prefix, ch_fmt="Chan{ch}:")
-    ate = ATE(prefix="PSCtest:", ch_fmt="Chan{ch}:")
 
     # Prompt the user for PSC Info
     # Create Shipment directory, Report Gen Directory, and
@@ -34,7 +34,7 @@ if __name__ == "__main__":
     ctx, pdf_path = start_report(dut)
 
     evr_timing_test(dut, ctx)
-    ate_init()
+    ate_init(ate, dut)
 
     for chan in range(1, dut.num_channels+1):
         with channel_section(ctx, chan) as sec:
@@ -57,7 +57,7 @@ if __name__ == "__main__":
             print("\n\n*******************************************"
                   f"\nBeginning Channel {chan} Smooth Ramp Tests..."
                   "\n*******************************************")
-            smooth_ramp_test(dut, sec, chan, ctx)
+            smooth_ramp_test(dut, ate, sec, chan, ctx)
 
     if dut.bandwidth == "Fast":
         print("\n\n*******************************************"
