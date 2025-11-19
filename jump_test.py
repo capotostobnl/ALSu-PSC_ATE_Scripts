@@ -71,12 +71,12 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
     # Slice all waveforms over that same time window so zoom plots line up
     DACTRAN = np.asarray(DAC)[start:end]    # type: ignore
     ERRTRAN = np.asarray(ERR)[start:end]    # type: ignore
-    D1TRAN  = np.asarray(D1)[start:end]     # type: ignore
-    D2TRAN  = np.asarray(D2)[start:end]     # type: ignore
+    D1TRAN = np.asarray(D1)[start:end]     # type: ignore
+    D2TRAN = np.asarray(D2)[start:end]     # type: ignore
     REGTRAN = np.asarray(REG)[start:end]    # type: ignore
-    VTRAN   = np.asarray(VOLT)[start:end]   # type: ignore
-    GTRAN   = np.asarray(GND)[start:end]    # type: ignore
-    STRAN   = np.asarray(SPR)[start:end]    # type: ignore
+    VTRAN = np.asarray(VOLT)[start:end]   # type: ignore
+    GTRAN = np.asarray(GND)[start:end]    # type: ignore
+    STRAN = np.asarray(SPR)[start:end]    # type: ignore
 
     f = plt.figure(figsize=(8, 4))
     gs = GridSpec(1, 3, figure=f)
