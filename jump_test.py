@@ -18,6 +18,21 @@ from report_generator import ReportContext
 from initialize_dut import DUT
 
 
+def _transient_window(arr, pad: int = 200) -> tuple[int, int]:
+    """Return [start, end) indices that span the main transient
+    from min(arr) to max(arr), with optional padding."""
+    a = np.asarray(arr)
+    i_min = int(np.argmin(a))
+    i_max = int(np.argmax(a))
+
+    lo = min(i_min, i_max)
+    hi = max(i_min, i_max)
+
+    start = max(0, lo - pad)
+    end = min(len(a), hi + pad)
+    return start, end
+
+
 def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
     assert dut.psc is not None
     WfmPV = dut.psc.WfmPV
@@ -50,33 +65,25 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
     GND = dut.psc.get_wfm(chan, WfmPV.GND)
     SPR = dut.psc.get_wfm(chan, WfmPV.SPARE)
 
-    Tindex = np.argmax(ERR)  # type: ignore
-    DACTRAN = []
-    ERRTRAN = []
-    D1TRAN = []
-    D2TRAN = []
-    REGTRAN = []
-    VTRAN = []
-    GTRAN = []
-    STRAN = []
+    # Use DAC as the reference waveform to define the transient window
+    start, end = _transient_window(DAC, pad=200)  # type: ignore
 
-    if Tindex > 500 and Tindex < 98000:
-        for i in range((Tindex - 500), (Tindex + 500)):
-            DACTRAN.append(DAC[i])  # type: ignore
-            ERRTRAN.append(ERR[i])  # type: ignore
-            D1TRAN.append(D1[i])  # type: ignore
-            D2TRAN.append(D2[i])  # type: ignore
-            REGTRAN.append(REG[i])  # type: ignore
-            VTRAN.append(VOLT[i])  # type: ignore
-            GTRAN.append(GND[i])  # type: ignore
-            STRAN.append(SPR[i])  # type: ignore
+    # Slice all waveforms over that same time window so zoom plots line up
+    DACTRAN = np.asarray(DAC)[start:end]    # type: ignore
+    ERRTRAN = np.asarray(ERR)[start:end]    # type: ignore
+    D1TRAN  = np.asarray(D1)[start:end]     # type: ignore
+    D2TRAN  = np.asarray(D2)[start:end]     # type: ignore
+    REGTRAN = np.asarray(REG)[start:end]    # type: ignore
+    VTRAN   = np.asarray(VOLT)[start:end]   # type: ignore
+    GTRAN   = np.asarray(GND)[start:end]    # type: ignore
+    STRAN   = np.asarray(SPR)[start:end]    # type: ignore
 
     f = plt.figure(figsize=(8, 4))
     gs = GridSpec(1, 3, figure=f)
     ax1 = f.add_subplot(gs[0, 0:2])
     ax2 = f.add_subplot(gs[0, 2])
 
-    ax1.plot(DAC)  # type: ignore
+    ax1.plot(DAC)
     ax1.grid(True)
     ax1.set_xlabel("10KHz Samples")
     ax1.set_ylabel("Current (A)")
@@ -94,7 +101,6 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
                              "_DAC_Jump.png")
     f.savefig(save_path)
     plt.close(f)
-    f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
 
     f = plt.figure(figsize=(8, 4))
@@ -102,7 +108,7 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
     ax1 = f.add_subplot(gs[0, 0:2])
     ax2 = f.add_subplot(gs[0, 2])
 
-    ax1.plot(ERR)  # type: ignore
+    ax1.plot(ERR)
     ax1.grid(True)
     ax1.set_xlabel("10KHz Samples")
     ax1.set_ylabel("Current (A)")
@@ -119,7 +125,6 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
                              f"Chan{chan}_ERROR_Jump.png")
     f.savefig(save_path)
     plt.close(f)
-    f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
 
     f = plt.figure(figsize=(8, 4))
@@ -127,7 +132,7 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
     ax1 = f.add_subplot(gs[0, 0:2])
     ax2 = f.add_subplot(gs[0, 2])
 
-    ax1.plot(D1)  # type: ignore
+    ax1.plot(D1)
     ax1.grid(True)
     ax1.set_xlabel("10KHz Samples")
     ax1.set_ylabel("Current (A)")
@@ -144,7 +149,6 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
                              f"Chan{chan}_DCCT1_Jump.png")
     f.savefig(save_path)
     plt.close(f)
-    f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
 
     f = plt.figure(figsize=(8, 4))
@@ -152,7 +156,7 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
     ax1 = f.add_subplot(gs[0, 0:2])
     ax2 = f.add_subplot(gs[0, 2])
 
-    ax1.plot(D2)  # type: ignore
+    ax1.plot(D2)
     ax1.grid(True)
     ax1.set_xlabel("10KHz Samples")
     ax1.set_ylabel("Current (A)")
@@ -169,7 +173,6 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
                              f"Chan{chan}_DCCT2_Jump.png")
     f.savefig(save_path)
     plt.close(f)
-    f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
 
     f = plt.figure(figsize=(8, 4))
@@ -177,7 +180,7 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
     ax1 = f.add_subplot(gs[0, 0:2])
     ax2 = f.add_subplot(gs[0, 2])
 
-    ax1.plot(REG)  # type: ignore
+    ax1.plot(REG)
     ax1.grid(True)
     ax1.set_xlabel("10KHz Samples")
     ax1.set_ylabel("Current (A)")
@@ -194,7 +197,6 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
                              f"Chan{chan}_REG_Jump.png")
     f.savefig(save_path)
     plt.close(f)
-    f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
 
     f = plt.figure(figsize=(8, 4))
@@ -202,7 +204,7 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
     ax1 = f.add_subplot(gs[0, 0:2])
     ax2 = f.add_subplot(gs[0, 2])
 
-    ax1.plot(VOLT)  # type: ignore
+    ax1.plot(VOLT)
     ax1.grid(True)
     ax1.set_xlabel("10KHz Samples")
     ax1.set_ylabel("Voltage (V)")
@@ -219,7 +221,6 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
                              f"Chan{chan}_VOLT_Jump.png")
     f.savefig(save_path)
     plt.close(f)
-    f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
 
     f = plt.figure(figsize=(8, 4))
@@ -228,10 +229,10 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
     ax2 = f.add_subplot(gs[0, 2])
 
     IgndSP = 0.1
-    IgndAvg = float(np.mean(GND))  # type: ignore
+    IgndAvg = float(np.mean(GND))
     print("####################IgndAvg=", IgndAvg, IgndSP)
     Diff = abs(IgndSP - IgndAvg)
-    ax1.plot(GND)  # type: ignore
+    ax1.plot(GND)
     ax1.grid(True)
     ax1.set_xlabel("10KHz Samples")
     ax1.set_ylabel("Current (A)")
@@ -290,7 +291,6 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
                              f"Chan{chan}_IGND_Jump.png")
     f.savefig(save_path)
     plt.close(f)
-    f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
 
     f = plt.figure(figsize=(8, 4))
@@ -298,7 +298,7 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
     ax1 = f.add_subplot(gs[0, 0:2])
     ax2 = f.add_subplot(gs[0, 2])
 
-    ax1.plot(SPR)  # type: ignore
+    ax1.plot(SPR)
     ax1.grid(True)
     ax1.set_xlabel("10KHz Samples")
     ax1.set_ylabel("Current (A)")
@@ -315,7 +315,6 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
                              f"Chan{chan}_SPARE_Jump.png")
     f.savefig(save_path)
     plt.close(f)
-    f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
     base_style = ctx.styles["Normal"]
     mstr = "Jump Test Results:"

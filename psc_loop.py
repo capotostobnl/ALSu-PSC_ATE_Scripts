@@ -66,3 +66,4 @@ if __name__ == "__main__":
         fofb_daisy_packet_monotonic_test(dut, ctx)
 
     finalize_report(ctx)
+    print("Test complete! See folder for report.")
