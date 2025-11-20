@@ -169,6 +169,18 @@ def ate_fault_tests(dut: DUT, ate: ATE, section: list, chan: int):
     ate.set_pc_fault(chan, 0)
     while dut.psc.get_live_faults(chan) != 0:
         sleep(0.1)
+        ate.set_flt1(chan, 0)
+    while dut.psc.get_latched_faults(chan) != 0:
+        sleep(0.1)
+    ate.set_flt2(chan, 0)
+    while dut.psc.get_latched_faults(chan) != 0:
+        sleep(0.1)
+    ate.set_fltspare(chan, 0)
+    while dut.psc.get_latched_faults(chan) != 0:
+        sleep(0.1)
+    ate.set_pc_fault(chan, 0)
+    while dut.psc.get_latched_faults(chan) != 0:
+        sleep(0.1)
 
     dut.psc.set_dac_setpt(chan, 0)
     dut.psc.set_power_on1(chan, 0)
