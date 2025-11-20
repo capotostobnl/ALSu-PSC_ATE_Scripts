@@ -19,7 +19,7 @@ from initialize_dut import DUT
 from ate_epics import ATE
 
 
-def ps_regulation_test(dut: DUT, ate: ATE, section: list, chan: int, \
+def ps_regulation_test(dut: DUT, ate: ATE, section: list, chan: int,
                        ctx: ReportContext):
     assert dut.psc is not None
     print(f"Preparing PSC Channel {chan} for Regulation test...")

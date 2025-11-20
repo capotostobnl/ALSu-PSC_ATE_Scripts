@@ -81,7 +81,7 @@ def evr_timing_test(dut: DUT, ctx: ReportContext) -> None:
 
         if TD > 0:
             if not started:
-                # First usable tick: initialize T0/Tlast and don't check TD yet ⭐
+                # First usable tick: initialize T0/Tlast and don't check TD yet
                 T0 = TM
                 Tlast = TM
                 started = True
