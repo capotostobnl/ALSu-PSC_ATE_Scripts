@@ -220,6 +220,10 @@ class PSC:
         """Read DCCT2-I"""
         return self.safe_get("DCCT2-I", ch=ch)
 
+    def get_ignd_val(self, ch: int) -> float:
+        """Get ignd value"""
+        return self.safe_get("Gnd-I", ch=ch)
+
     def get_dac(self, ch: int) -> float | None:
         """Read DAC-I"""
         return self.safe_get("DAC-I", ch=ch)

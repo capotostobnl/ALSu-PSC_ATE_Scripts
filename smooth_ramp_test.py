@@ -22,6 +22,13 @@ from ate_epics import ATE
 def smooth_ramp_test(dut: DUT, ate: ATE, section: list,
                      chan: int, ctx: ReportContext):
     assert dut.psc is not None
+
+    IgndSP = 0.1
+    ate.set_ignd_channel(chan)
+    sleep(0.5)
+    ate.set_ignd_value(IgndSP, chan, dut)
+    sleep(0.1)
+
     WfmPV = dut.psc.WfmPV
     dut.psc.set_op_mode(chan, 0)  # Set PS Mode to SMOOTH
     dut.psc.set_rate(chan, 10)  # Set Ramp Rate to 10 Amps/Sec
@@ -67,7 +74,6 @@ def smooth_ramp_test(dut: DUT, ate: ATE, section: list,
                              f"Chan{chan}_DAC_Smooth.png")
     f.savefig(save_path)
     plt.close(f)
-    f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
 
     f, ax = plt.subplots(figsize=(8, 4))
@@ -81,7 +87,6 @@ def smooth_ramp_test(dut: DUT, ate: ATE, section: list,
                              f"Chan{chan}_DCCT1_Smooth.png")
     f.savefig(save_path)
     plt.close(f)
-    f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
 
     f, ax = plt.subplots(figsize=(8, 4))
@@ -95,7 +100,6 @@ def smooth_ramp_test(dut: DUT, ate: ATE, section: list,
                              f"Chan{chan}_DCCT2_Smooth.png")
     f.savefig(save_path)
     plt.close(f)
-    f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
 
     f, ax = plt.subplots(figsize=(8, 4))
@@ -109,7 +113,6 @@ def smooth_ramp_test(dut: DUT, ate: ATE, section: list,
                              f"Chan{chan}_ERROR_Smooth.png")
     f.savefig(save_path)
     plt.close(f)
-    f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
 
     f, ax = plt.subplots(figsize=(8, 4))
@@ -123,7 +126,6 @@ def smooth_ramp_test(dut: DUT, ate: ATE, section: list,
                              f"Chan{chan}_REG_Smooth.png")
     f.savefig(save_path)
     plt.close(f)
-    f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
 
     f, ax = plt.subplots(figsize=(8, 4))
@@ -137,13 +139,7 @@ def smooth_ramp_test(dut: DUT, ate: ATE, section: list,
                              f"Chan{chan}_VOLT_Smooth.png")
     f.savefig(save_path)
     plt.close(f)
-    f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
-
-    IgndSP = 0.1
-    ate.set_ignd_channel(chan)
-    ate.set_ignd_value(IgndSP)
-    IgndSP = 0.1
 
     f, ax = plt.subplots(figsize=(8, 4))
     IgndAvg = float(np.mean(GND))  # type: ignore
@@ -201,7 +197,6 @@ def smooth_ramp_test(dut: DUT, ate: ATE, section: list,
                              f"Chan{chan}_IGND_Smooth.png")
     f.savefig(save_path)
     plt.close(f)
-    f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
 
     f, ax = plt.subplots(figsize=(8, 4))
@@ -215,7 +210,6 @@ def smooth_ramp_test(dut: DUT, ate: ATE, section: list,
                              f"Chan{chan}_SPARE_Smooth.png")
     f.savefig(save_path)
     plt.close(f)
-    f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
 
     base_style = ctx.styles["Normal"]

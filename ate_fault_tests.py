@@ -141,12 +141,6 @@ def ate_fault_tests(dut: DUT, ate: ATE, section: list, chan: int):
     dut.psc.set_park(chan, 0)
     dut.psc.set_rate(chan, 4)
 
-    # ATE PVs Used here:
-#    AteChanFault = "PSCtest:CH" + str(chan) + ":Fault-SP"
-#    AteDcctFault = "PSCtest:DCCT:Fault:Channel-SP"
-#    AteIgndChan = "PSCtest:Ignd:Channel-SP"
-#    AteIgndVal = "PSCtest:Ignd-SP"
-
     # Set ATE DCCT Fault to "NONE"
     ate.set_dcct_fault_channel(0)
 
@@ -156,7 +150,7 @@ def ate_fault_tests(dut: DUT, ate: ATE, section: list, chan: int):
 
     # Set Ignd to something sensible, like 0.1A
     i_gnd_sp = 0.1
-    ate.set_ignd_value(i_gnd_sp)
+    ate.set_ignd_value(i_gnd_sp, chan, dut)
     sleep(5)
 
     tdata = []
@@ -164,13 +158,17 @@ def ate_fault_tests(dut: DUT, ate: ATE, section: list, chan: int):
 
     print("\n\nClearing all ATE Faults...\n")
     ate.set_flt1(chan, 0)
-    sleep(3.5)
+    while dut.psc.get_live_faults(chan) != 0:
+        sleep(0.1)
     ate.set_flt2(chan, 0)
-    sleep(3.5)
+    while dut.psc.get_live_faults(chan) != 0:
+        sleep(0.1)
     ate.set_fltspare(chan, 0)
-    sleep(3.5)
+    while dut.psc.get_live_faults(chan) != 0:
+        sleep(0.1)
     ate.set_pc_fault(chan, 0)
-    sleep(3.5)
+    while dut.psc.get_live_faults(chan) != 0:
+        sleep(0.1)
 
     dut.psc.set_dac_setpt(chan, 0)
     dut.psc.set_power_on1(chan, 0)

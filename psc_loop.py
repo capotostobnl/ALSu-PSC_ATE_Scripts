@@ -38,7 +38,6 @@ if __name__ == "__main__":
 
     for chan in range(1, dut.num_channels+1):
         with channel_section(ctx, chan) as sec:
-
             print("\n\n*******************************************"
                   f"\nBeginning Channel {chan} ATE Fault Tests..."
                   "\n*******************************************")
@@ -47,12 +46,12 @@ if __name__ == "__main__":
             print("\n\n*******************************************"
                   f"\nBeginning Channel {chan} Regulation Tests..."
                   "\n*******************************************")
-            ps_regulation_test(dut, sec, chan, ctx)
+            ps_regulation_test(dut, ate, sec, chan, ctx)
 
             print("\n\n*******************************************"
                   f"\nBeginning Channel {chan} Jump Tests..."
                   "\n*******************************************")
-            jump_test(dut, sec, chan, ctx)
+            jump_test(dut, ate, sec, chan, ctx)
 
             print("\n\n*******************************************"
                   f"\nBeginning Channel {chan} Smooth Ramp Tests..."

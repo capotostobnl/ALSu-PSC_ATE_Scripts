@@ -16,25 +16,19 @@ from reportlab.lib.enums import TA_CENTER
 
 from report_generator import ReportContext
 from initialize_dut import DUT
+from ate_epics import ATE
 
 
-def _transient_window(arr, pad: int = 200) -> tuple[int, int]:
-    """Return [start, end) indices that span the main transient
-    from min(arr) to max(arr), with optional padding."""
-    a = np.asarray(arr)
-    i_min = int(np.argmin(a))
-    i_max = int(np.argmax(a))
-
-    lo = min(i_min, i_max)
-    hi = max(i_min, i_max)
-
-    start = max(0, lo - pad)
-    end = min(len(a), hi + pad)
-    return start, end
-
-
-def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
+def jump_test(dut: DUT, ate: ATE, section: list, chan: int,
+              ctx: ReportContext):
     assert dut.psc is not None
+
+    IgndSP = 0.1
+    ate.set_ignd_channel(chan)
+    sleep(0.5)
+    ate.set_ignd_value(IgndSP, chan, dut)
+    sleep(0.5)
+
     WfmPV = dut.psc.WfmPV
     dut.psc.set_wfm_xmin(chan, 0)
     dut.psc.set_wfm_xmax(chan, 100000)
@@ -48,6 +42,7 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
             SP = 50.05
     else:
         SP = 10.05
+
     dut.psc.set_dac_setpt(chan, SP)
     dut.psc.flush_io()
     sleep(0.1)
@@ -55,7 +50,7 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
     sleep(2)
     while dut.psc.is_user_trig_active(chan) > 0:
         sleep(1)
-        print("Wating for Jump Snapshot data.....")
+        print("Waiting for Jump Snapshot data.....")
     DAC = dut.psc.get_wfm(chan, WfmPV.DAC)
     D1 = dut.psc.get_wfm(chan, WfmPV.DCCT1)
     D2 = dut.psc.get_wfm(chan, WfmPV.DCCT2)
@@ -65,18 +60,27 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
     GND = dut.psc.get_wfm(chan, WfmPV.GND)
     SPR = dut.psc.get_wfm(chan, WfmPV.SPARE)
 
-    # Use DAC as the reference waveform to define the transient window
-    start, end = _transient_window(DAC, pad=200)  # type: ignore
+    # ----------------------------------------------------------
+    # Find Tindex based on DAC jump (largest absolute derivative)
+    # ----------------------------------------------------------
+    a = np.asarray(DAC)
+    d = np.diff(a)
+    Tindex = int(np.argmax(np.abs(d)))     # <-- the correct jump location
 
-    # Slice all waveforms over that same time window so zoom plots line up
-    DACTRAN = np.asarray(DAC)[start:end]    # type: ignore
-    ERRTRAN = np.asarray(ERR)[start:end]    # type: ignore
-    D1TRAN = np.asarray(D1)[start:end]     # type: ignore
-    D2TRAN = np.asarray(D2)[start:end]     # type: ignore
-    REGTRAN = np.asarray(REG)[start:end]    # type: ignore
-    VTRAN = np.asarray(VOLT)[start:end]   # type: ignore
-    GTRAN = np.asarray(GND)[start:end]    # type: ignore
-    STRAN = np.asarray(SPR)[start:end]    # type: ignore
+    # ----------------------------------------------------------
+    # HARD-CODED original window: Tindex ± 500
+    # ----------------------------------------------------------
+    start = max(0, Tindex - 500)
+    end = min(len(a), Tindex + 500)
+
+    DACTRAN = a[start:end]
+    ERRTRAN = np.asarray(ERR)[start:end]
+    D1TRAN = np.asarray(D1)[start:end]
+    D2TRAN = np.asarray(D2)[start:end]
+    REGTRAN = np.asarray(REG)[start:end]
+    VTRAN = np.asarray(VOLT)[start:end]
+    GTRAN = np.asarray(GND)[start:end]
+    STRAN = np.asarray(SPR)[start:end]
 
     f = plt.figure(figsize=(8, 4))
     gs = GridSpec(1, 3, figure=f)
@@ -228,7 +232,6 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
     ax1 = f.add_subplot(gs[0, 0:2])
     ax2 = f.add_subplot(gs[0, 2])
 
-    IgndSP = 0.1
     IgndAvg = float(np.mean(GND))
     print("####################IgndAvg=", IgndAvg, IgndSP)
     Diff = abs(IgndSP - IgndAvg)
