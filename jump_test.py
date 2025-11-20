@@ -44,6 +44,7 @@ def jump_test(dut: DUT, ate: ATE, section: list, chan: int,
         SP = 10.05
 
     dut.psc.set_dac_setpt(chan, SP)
+    print(f"DAC SP: {SP} \nDAC RB: {dut.psc.get_dac(chan)}(ramping)")
     dut.psc.flush_io()
     sleep(0.1)
     dut.psc.user_shot(chan)
@@ -51,6 +52,8 @@ def jump_test(dut: DUT, ate: ATE, section: list, chan: int,
     while dut.psc.is_user_trig_active(chan) > 0:
         sleep(1)
         print("Waiting for Jump Snapshot data.....")
+    sleep(4)
+    print(f"DAC SP: {SP} \nDAC RB: {dut.psc.get_dac(chan)}(ramping)")
     DAC = dut.psc.get_wfm(chan, WfmPV.DAC)
     D1 = dut.psc.get_wfm(chan, WfmPV.DCCT1)
     D2 = dut.psc.get_wfm(chan, WfmPV.DCCT2)

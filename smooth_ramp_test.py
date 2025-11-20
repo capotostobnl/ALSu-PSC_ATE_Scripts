@@ -46,13 +46,17 @@ def smooth_ramp_test(dut: DUT, ate: ATE, section: list,
     else:
         dut.psc.set_dac_setpt(chan, -23.9)  # Set DAC to -23.9 Amps
         sleep(10)  # Wait 10 Seconds for Ramp to Complete
+        print(f"DAC SP: -23.9 \nDAC RB: {dut.psc.get_dac(chan)}")
         dut.psc.set_dac_setpt(chan, 23.9)  # Set DAC SP to +23.9 Amps
     sleep(2)  # Wait 2 Seconds before taking Snapshot
+    print(f"DAC SP: +23.9 \nDAC RB: {dut.psc.get_dac(chan)}(Ramping!)")
     dut.psc.user_shot(chan)  # Take the Snapshot.
     sleep(2)
     while dut.psc.is_user_trig_active(chan) > 0:
         sleep(1)
         print("Wating for Smooth Snapshot data.....")
+    sleep(6)
+    print(f"DAC SP: +23.9 \nDAC RB: {dut.psc.get_dac(chan)}")
 
     DAC = dut.psc.get_wfm(chan, WfmPV.DAC)
     D1 = dut.psc.get_wfm(chan, WfmPV.DCCT1)
