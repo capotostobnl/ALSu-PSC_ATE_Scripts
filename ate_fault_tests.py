@@ -1,443 +1,238 @@
 """ATE Fault Test Submodule
-Modified M. Capotosto 11-9-2025
+Modified M. Capotosto 12-01-2025
 Original: T. Caracappy
 """
-from typing import Callable, Any
+from __future__ import annotations
+import subprocess
+import threading
+from queue import Queue, Empty
 from time import sleep, time
 from reportlab.lib.units import inch
 from reportlab.platypus import Table, Spacer
 from reportlab.lib import colors
+
 from initialize_dut import DUT
-from epics import PV
 from ate_epics import ATE
 
+# =============================================================================
+# camonitor helpers
+# =============================================================================
 
-def _check_fault(dut: DUT, chan: int, mask: int, fault_str: str,
-                 set_fault_f: Callable[[int, bool], Any],
-                 tdata: list, tcolor: list, poll_int: float = 1.0,
-                 set_fault_v: bool = False, max_tries: int = 10,
-                 use_monitor: bool = False, min_monitor_time: float = 5.0,) \
-                    -> tuple[list, list]:
-    assert dut.psc is not None
 
-    error = 0
-    if not use_monitor:
-        count = 0
-        while True:
-            live_raw = dut.psc.get_live_faults(chan)
-            lat_raw = dut.psc.get_latched_faults(chan)
+def _enqueue_output(pipe, queue: Queue):
+    """Non-blocking line-reading thread for camonitor output."""
+    for line in iter(pipe.readline, b""):
+        queue.put(line.decode(errors="ignore"))
+    pipe.close()
 
-            # Coerce None → 0 so bitmask operations are safe
-            live = int(live_raw) if live_raw is not None else 0
-            lat = int(lat_raw) if lat_raw is not None else 0
 
-            live_set = (live & mask) != 0
-            lat_set = (lat & mask) != 0
+def _start_camonitor(pvname: str) -> tuple[subprocess.Popen, Queue]:
+    """Start camonitor <pvname> and return (process, queue)."""
+    proc = subprocess.Popen(
+        ["camonitor", pvname],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    q = Queue()
+    threading.Thread(target=_enqueue_output, args=(proc.stdout, q),
+                     daemon=True).start()
+    return proc, q
 
-            if live_set and lat_set:
-                sleep(4)
-                break  # both bits set → success
 
-            sleep(poll_int)
-            count += 1
-            if count > max_tries:
-                error = 1
-                break
+def _parse_camonitor_value(line: str) -> int:
+    """Extract final integer from camonitor line."""
+    try:
+        return int(line.strip().split()[-1])
+    except Exception:
+        return 0
 
-    else:
-        # ----------------------------
-        # Monitor-based behavior
-        # ----------------------------
-        # Build full PV names using PSC helper
-        live_pvname = dut.psc.pv("FaultsLive-I", ch=chan)
-        lat_pvname = dut.psc.pv("FaultsLat-I", ch=chan)
+# =============================================================================
+# Fault Configuration Table
+# =============================================================================
 
-        live_pv = PV(live_pvname, auto_monitor=True)
-        lat_pv = PV(lat_pvname, auto_monitor=True)
 
-        state: dict[str, int] = {"live": 0, "lat": 0}
+FAULT_TESTS = [
+    (0x80,  "#1",    "set_flt1", True),
+    (0x100, "#2",    "set_flt2", True),
+    (0x200, "SPARE", "set_fltspare", True),
+    (0x40,  "DCCT",  "set_dcct_fault_channel", False),
+]
 
-        def _live_cb(pvname=None, value=None, **kws):
-            try:
-                state["live"] = int(value) if value is not None else 0
-            except Exception:
-                state["live"] = 0
-
-        def _lat_cb(pvname=None, value=None, **kws):
-            try:
-                state["lat"] = int(value) if value is not None else 0
-            except Exception:
-                state["lat"] = 0
-
-        live_pv.add_callback(_live_cb)
-        lat_pv.add_callback(_lat_cb)
-
-        start = time()
-        timeout = min_monitor_time + max_tries * poll_int
-
-        while True:
-            now = time()
-            live_set = (state["live"] & mask) != 0
-            lat_set = (state["lat"] & mask) != 0
-
-            # Condition: bit seen in both + at least min_monitor_time elapsed
-            if live_set and lat_set and (now - start) >= min_monitor_time:
-                break
-
-            if now - start > timeout:
-                error = 1
-                break
-
-            sleep(poll_int)
-
-        # Clean up callbacks
-        live_pv.clear_callbacks()
-        lat_pv.clear_callbacks()
-
-    if error == 0:
-        tdata.append([f"Fault {fault_str} Generated and Detected", "PASS"])
-        tcolor.append(0)
-        print(f"Fault {fault_str} Generated and Detected: PASS")
-    else:
-        tdata.append([f"Fault {fault_str} Generated and Detected", "FAIL"])
-        tcolor.append(1)
-        print(f"Fault {fault_str} Generated and Detected: FAIL")
-
-    # Clear the fault and reset...
-    set_fault_f(chan, set_fault_v)  # Set fault function to call
-    sleep(4)
-    dut.psc.set_reset(chan, 1)
-    sleep(1)
-    dut.psc.clear_faults(chan, 1)
-    sleep(1)
-    dut.psc.set_reset(chan, 0)
-    sleep(1)
-    dut.psc.clear_faults(chan, 0)
-    sleep(1)
-    # Append the clear result to tdata and tcolor
-    live_raw = dut.psc.get_live_faults(chan)
-    lat_raw = dut.psc.get_latched_faults(chan)
-    if live_raw == 0 and lat_raw == 0:
-        tdata.append([f"Fault {fault_str} Successfully Cleared", "PASS"])
-        tcolor.append(0)
-    else:
-        tdata.append([f"Fault {fault_str} Successfully Cleared", "FAIL"])
-        tcolor.append(1)
-    return tdata, tcolor
+# =============================================================================
+# Main Test Routine
+# =============================================================================
 
 
 def ate_fault_tests(dut: DUT, ate: ATE, section: list, chan: int):
-    """Main module for carrying out ATE Fault Testing"""
-    print("#########################################\n"
-          "# **********ATE Fault Test...**********\n"
-          "#########################################\n")
-    print(f"Beginning Channel {chan}: ")
+    """Main driver for automated ATE Fault Testing using event-driven EPICS."""
+
     assert dut.psc is not None
 
-    # DUT control via PSC adapter
+    print("==============================================")
+    print("          ATE Fault Test Starting")
+    print("==============================================")
+    print(f"Channel: {chan}\n")
+
+    # Basic PSC setup (fast hardware)
     dut.psc.set_dac_setpt(chan, 0)
+    sleep(0.5)
     dut.psc.set_power_on1(chan, 0)
+    sleep(0.5)
     dut.psc.set_enable_on2(chan, 0)
+    sleep(0.5)
     dut.psc.set_park(chan, 0)
+    sleep(0.5)
     dut.psc.set_rate(chan, 4)
+    sleep(0.5)
 
-    # Set ATE DCCT Fault to "NONE"
+    # ATE setup
     ate.set_dcct_fault_channel(0)
-
-    # Select Channel for Ignd Setting
+    sleep(4)
     ate.set_ignd_channel(chan)
-    sleep(1)
+    sleep(4)
+    ate.set_ignd_value(0.1, chan, dut)
+    sleep(4)
 
-    # Set Ignd to something sensible, like 0.1A
-    i_gnd_sp = 0.1
-    ate.set_ignd_value(i_gnd_sp, chan, dut)
-    sleep(5)
-
-    tdata = []
-    tdata.append(["ATE Fault Tests for Channel " + str(chan), 0])
-    """
-    print("\n\nClearing all ATE Faults...\n")
-    ate.set_flt1(chan, 0)
-    while ate.get_status() != 1:
-        sleep(0.1)
-    ate.set_flt2(chan, 0)
-    while ate.get_status() != 1:
-        sleep(0.1)
-    ate.set_fltspare(chan, 0)
-    while ate.get_status() != 1:
-        sleep(0.1)
-    ate.set_pc_fault(chan, 0)
-    while ate.get_status() != 1:
-        sleep(0.1)
-        ate.set_flt1(chan, 0)
-    while ate.get_status() != 1:
-        sleep(0.1)
-    ate.set_flt2(chan, 0)
-    while ate.get_status() != 1:
-        sleep(0.1)
-    ate.set_fltspare(chan, 0)
-    while ate.get_status() != 1:
-        sleep(0.1)
-    ate.set_pc_fault(chan, 0)
-    while ate.get_status() != 1:
-        sleep(0.1)
-
-    dut.psc.set_dac_setpt(chan, 0)
-    dut.psc.set_power_on1(chan, 0)
-    dut.psc.set_enable_on2(chan, 0)
-    dut.psc.set_park(chan, 0)
-    dut.psc.set_reset(chan, 1)
-    sleep(1)
-    dut.psc.clear_faults(chan, 1)
-    sleep(1)
-
-
-
-    dut.psc.set_fault_mask(7, chan, 1)
-    dut.psc.set_fault_mask(8, chan, 1)
-    dut.psc.set_fault_mask(9, chan, 1)
-    while True:
-        fault_sum = 0
-        for i in range(1, 5):
-            dut.psc.set_reset(i, 1)
-            sleep(0.1)
-            dut.psc.clear_faults(i, 1)
-            sleep(0.1)
-            dut.psc.set_reset(i, 0)
-            sleep(0.1)
-            dut.psc.clear_faults(i, 0)
-            sleep(0.1)
-            fault_sum += dut.psc.get_live_faults(i)
-            sleep(0.1)
-            fault_sum += dut.psc.get_latched_faults(i)
-            sleep(0.1)
-            print("Clearing faults in loop...")
-        if fault_sum == 0:
-            break
-
-    dut.psc.set_reset(chan, 0)
-    sleep(1)
-    dut.psc.clear_faults(chan, 0)
-    sleep(1)"""
-
+    tdata = [[f"ATE Fault Tests for Channel {chan}", 0]]
     tcolor = []
-    """
-    print("RESET", "Live Faults: ", dut.psc.get_live_faults(chan),
-          "Latched Faults: ", dut.psc.get_latched_faults(chan))
 
-    if dut.psc.get_live_faults(chan) == 0 and \
-            dut.psc.get_latched_faults(chan) == 0:
-        print("\n\nFault Clear: PASSED")
-        tdata.append(["All Faults Successfully Cleared", "PASS"])
-        tcolor.append(0)
-    else:
-        print("\n\nFault Clear: FAILED")
-        tdata.append(["All Faults Successfully Cleared", "FAIL"])
-        tcolor.append(1)
-        """
-    while True:
-        #ans = input("Were faults manually cleared successfully?: ").strip().upper()
-        ans = "Y"
-        if ans in ("Y"):
-            tdata.append(["All Faults Successfully Cleared", "PASS"])
-            tcolor.append(0)
-            break
-        elif ans in "N":
-            tdata.append(["All Faults Successfully Cleared", "FAIL"])
-            tcolor.append(1)
-            break
+    # -------------------------------------------------------------------------
+    # Loop over all fault tests
+    # -------------------------------------------------------------------------
+    for mask, label, method_name, setter_bool in FAULT_TESTS:
+        print(f"\n--- Testing Fault {label} ---")
+        setter = getattr(ate, method_name)
+
+        # Start monitoring BEFORE issuing the fault
+        live_pv = dut.psc.pv("FaultsLive-I", ch=chan)
+        lat_pv = dut.psc.pv("FaultsLat-I", ch=chan)
+        live_proc, live_q = _start_camonitor(live_pv)
+        lat_proc, lat_q = _start_camonitor(lat_pv)
+        state = {"live": 0, "lat": 0}
+        start_time = time()
+        detected = False
+
+        # Prime PVs: read initial values to ensure subscription is active
+        prime_deadline = time() + 0.2
+        while time() < prime_deadline:
+            try:
+                line = live_q.get_nowait()
+                state["live"] = _parse_camonitor_value(line)
+            except Empty:
+                pass
+            try:
+                line = lat_q.get_nowait()
+                state["lat"] = _parse_camonitor_value(line)
+            except Empty:
+                pass
+            sleep(0.01)
+
+        # Trigger the fault
+        if setter_bool:
+            setter(chan, True)
         else:
-            print("You must enter Y or N.")
-    # --------------------------------------------------------------------
-    # Test Fault 1
-    # --------------------------------------------------------------------
-    """
-    # Set Fault 1:
-    print("Testing Fault 1...")
-    ate.set_flt1(chan, 1)
-    while True:
-        if not ate.get_status():
-            # Wait for Fault #1 (bit 0x80) to be set in BOTH LiveFault'
-            # and LatFault
-            mask = 0x80
+            setter(chan)
+        set_command_time = time()  # 4-second delay start
 
-            fault_str = "#1"
-            set_fault_f = ate.set_flt1
-            tdata, tcolor = _check_fault(dut, chan, mask, fault_str,
-                                         set_fault_f, tdata, tcolor,
-                                         use_monitor=False,
-                                         min_monitor_time=1.0)
-            break"""
-    while True:
-        fault_str = "#1"
-        #ans = input("Was Fault 1 manually set and cleared successfully for "
-        #            f"channel {chan}?: ").strip().upper()
-        ans = "Y"
-        if ans in ("Y"):
-            tdata.append([f"Fault {fault_str} Generated and Detected", "PASS"])
-            tcolor.append(0)
-            print(f"Fault {fault_str} Generated and Detected: PASS")
-            tdata.append([f"Fault {fault_str} Successfully Cleared", "PASS"])
-            tcolor.append(0)
-            break
+        # Event-driven detection loop (pass if either Live or Latched)
+        while True:
+            now = time()
+            try:
+                while True:
+                    line = live_q.get_nowait()
+                    state["live"] = _parse_camonitor_value(line)
+            except Empty:
+                pass
+            try:
+                while True:
+                    line = lat_q.get_nowait()
+                    state["lat"] = _parse_camonitor_value(line)
+            except Empty:
+                pass
 
-        elif ans in "N":
-            tdata.append([f"Fault {fault_str} Generated and Detected", "FAIL"])
-            tcolor.append(1)
-            print(f"Fault {fault_str} Generated and Detected: FAIL")
-            tdata.append([f"Fault {fault_str} Successfully Cleared", "FAIL"])
-            tcolor.append(1)
-            break
+            # Pass if either Live or Latched
+            if (state["live"] & mask) != 0 or (state["lat"] & mask) != 0:
+                if not detected:
+                    print(f"✓ Fault {label} detected in PVs")
+                    tdata.append([f"Fault {label} Generated and Detected",
+                                  "PASS"])
+                    tcolor.append(0)
+                    detected = True
+
+            # Timeout after 6 seconds if never detected
+            if now - start_time > 6.0:
+                if not detected:
+                    print(f"✗ Fault {label} NOT detected within timeout")
+                    tdata.append([f"Fault {label} Generated and Detected",
+                                  "FAIL"])
+                    tcolor.append(1)
+                break
+
+            sleep(0.01)
+
+        live_proc.kill()
+        lat_proc.kill()
+
+        # Wait remaining of 4s after ATE set command if needed
+        remaining = 4.0 - (time() - set_command_time)
+        if remaining > 0:
+            sleep(remaining)
+
+        # Clear the fault
+        if setter_bool:
+            setter(chan, False)
         else:
-            print("You must enter Y or N.")
-    # --------------------------------------------------------------------
-    # Test Fault 2
-    # --------------------------------------------------------------------
-    # Set Fault 2:
-    """
-    print("Testing Fault 2...")
-    ate.set_flt2(chan, 1)
-    sleep(2)
+            setter(0)
+        sleep(4)  # 4-second delay after clear
 
-    while True:
-        if not ate.get_status():
-            # Wait for Fault #2 (bit 0x100) to be set in BOTH LiveFault
-            # and LatFault
-            mask = 0x100
-            fault_str = "#2"
-            set_fault_f = ate.set_flt2
+        # PSC reset/clear
+        dut.psc.set_reset(chan, 1)
+        sleep(0.5)
+        dut.psc.clear_faults(chan, 1)
+        sleep(0.5)
+        dut.psc.set_reset(chan, 0)
+        sleep(0.5)
+        dut.psc.clear_faults(chan, 0)
+        sleep(0.5)
 
-            tdata, tcolor = _check_fault(dut, chan, mask, fault_str,
-                                         set_fault_f, tdata, tcolor,
-                                         use_monitor=False,
-                                         min_monitor_time=5.0)
-            break"""
-    while True:
-        fault_str = "#2"
-        #ans = input("Was Fault 1 manually set and cleared successfully for "
-        #            f"channel {chan}?: ").strip().upper()
-        ans = "Y"
-        if ans in ("Y"):
-            tdata.append([f"Fault {fault_str} Generated and Detected", "PASS"])
+        # Verify PVs cleared (poll up to 1s)
+        for _ in range(20):
+            live_raw = dut.psc.get_live_faults(chan) or 0
+            lat_raw = dut.psc.get_latched_faults(chan) or 0
+            if live_raw == 0 and lat_raw == 0:
+                break
+            sleep(0.05)
+
+        live_raw = dut.psc.get_live_faults(chan) or 0
+        lat_raw = dut.psc.get_latched_faults(chan) or 0
+        if live_raw == 0 and lat_raw == 0:
+            print(f"✓ Fault {label} cleared")
+            tdata.append([f"Fault {label} Successfully Cleared", "PASS"])
             tcolor.append(0)
-            print(f"Fault {fault_str} Generated and Detected: PASS")
-            tdata.append([f"Fault {fault_str} Successfully Cleared", "PASS"])
-            tcolor.append(0)
-            break
-
-        elif ans in "N":
-            tdata.append([f"Fault {fault_str} Generated and Detected", "FAIL"])
-            tcolor.append(1)
-            print(f"Fault {fault_str} Generated and Detected: FAIL")
-            tdata.append([f"Fault {fault_str} Successfully Cleared", "FAIL"])
-            tcolor.append(1)
-            break
         else:
-            print("You must enter Y or N.")
-    # --------------------------------------------------------------------
-    # Test Fault 3
-    # --------------------------------------------------------------------
-    # Set Fault 3:
-    """
-    ate.set_fltspare(chan, 1)
-    sleep(2)
-
-    print("Testing Fault 3...")
-
-    while True:
-        if not ate.get_status():
-            # Wait for Fault #3 (bit 0x200) to be set in BOTH LiveFault
-            # and LatFault
-            mask = 0x200
-            fault_str = "SPARE"
-            set_fault_f = ate.set_fltspare
-
-            tdata, tcolor = _check_fault(dut, chan, mask, fault_str,
-                                         set_fault_f, tdata,
-                                         tcolor, use_monitor=False,
-                                         min_monitor_time=5.0)
-            break
-    """
-    while True:
-        fault_str = "SPARE"
-        ans = "Y"
-        #ans = input("Was Fault 1 manually set and cleared successfully for "
-        #            f"channel {chan}?: ").strip().upper()
-        if ans in ("Y"):
-            tdata.append([f"Fault {fault_str} Generated and Detected", "PASS"])
-            tcolor.append(0)
-            print(f"Fault {fault_str} Generated and Detected: PASS")
-            tdata.append([f"Fault {fault_str} Successfully Cleared", "PASS"])
-            tcolor.append(0)
-            break
-
-        elif ans in "N":
-            tdata.append([f"Fault {fault_str} Generated and Detected", "FAIL"])
+            print(f"✗ Fault {label} NOT fully cleared")
+            tdata.append([f"Fault {label} Successfully Cleared", "FAIL"])
             tcolor.append(1)
-            print(f"Fault {fault_str} Generated and Detected: FAIL")
-            tdata.append([f"Fault {fault_str} Successfully Cleared", "FAIL"])
-            tcolor.append(1)
-            break
-        else:
-            print("You must enter Y or N.")
-    # --------------------------------------------------------------------
-    # Test DCCT Fault
-    # --------------------------------------------------------------------
-    # Set DCCT Fault:
-    ate.set_dcct_fault_channel(chan)
-    sleep(2)
 
-    print("Testing DCCT Faults......")
-
-    # Wait for DCCT Fault (bit 0x40) to be set in BOTH LiveFault and LatFault
-    mask = 0x40
-    fault_str = "DCCT"
-
-    def _clear_dcct_fault(bit: int, val: bool) -> None:
-        """Clears DCCT fault by setting fault channel to NONE."""
-        ate.set_dcct_fault_channel(0)
-
-    tdata, tcolor = _check_fault(dut, chan, mask, fault_str,
-                                 set_fault_f=_clear_dcct_fault,
-                                 tdata=tdata, tcolor=tcolor)
-
-    row_h = [
-        0.35 * inch,
-        0.27 * inch,
-        0.27 * inch,
-        0.27 * inch,
-        0.27 * inch,
-        0.27 * inch,
-        0.27 * inch,
-        0.27 * inch,
-        0.27 * inch,
-        0.27 * inch,
-    ]
-    col_h = [4 * inch, 2 * inch]
+    # -------------------------------------------------------------------------
+    # Build ReportLab Table
+    # -------------------------------------------------------------------------
+    row_h = [0.35 * inch] + [0.27 * inch] * (len(tdata) - 1)
+    col_w = [4 * inch, 2 * inch]
 
     style = [
         ("SPAN", (0, 0), (1, 0)),
         ("ALIGN", (0, 0), (1, 0), "CENTER"),
         ("FONTSIZE", (0, 0), (1, 0), 16),
-        ("FONTSIZE", (0, 1), (1, 1), 14),
-        ("VALIGN", (0, 0), (1, 6), "MIDDLE"),
-        ("LINEABOVE", (0, 1), (1, 1), 2, colors.black),
-        ("LINEAFTER", (0, 1), (0, 9), 2, colors.black),
-        ("BACKGROUND", (0, 0), (1, 0), colors.lemonchiffon),
-        ("BACKGROUND", (0, 1), (0, 9), colors.lightblue),
-        ("FONTSIZE", (0, 1), (1, 9), 12),
+        ("VALIGN", (0, 0), (1, len(tdata) - 1), "MIDDLE"),
         ("GRID", (0, 0), (-1, -1), 1, colors.black),
         ("BOX", (0, 0), (-1, -1), 2, colors.black),
+        ("BACKGROUND", (0, 0), (1, 0), colors.lemonchiffon),
     ]
 
-    for i in range(0, 9):
-        if tcolor[i] == 0:
-            style.append(("BACKGROUND", (1, i + 1), (1, i + 1),
-                          colors.lightgreen))
-        else:
-            style.append(("BACKGROUND", (1, i + 1), (1, i + 1),
-                          colors.pink))
+    for i in range(1, len(tdata)):
+        bg = colors.lightgreen if tcolor[i - 1] == 0 else colors.pink
+        style.append(("BACKGROUND", (1, i), (1, i), bg))
 
-    ta = Table(tdata, col_h, row_h, style=style)
-    section.append(Spacer(width=1, height=0.2 * inch))
-    section.append(ta)
+    section.append(Spacer(1, 0.2 * inch))
+    section.append(Table(tdata, col_w, row_h, style=style))

@@ -27,7 +27,8 @@ def jump_test(dut: DUT, ate: ATE, section: list, chan: int,
     ate.set_ignd_channel(chan)
     sleep(0.5)
     ate.set_ignd_value(IgndSP, chan, dut)
-    sleep(0.5)
+    print(f"Set CH{chan} ignd to {IgndSP}, waiting 5 seconds settling time...")
+    sleep(5)
 
     WfmPV = dut.psc.WfmPV
     dut.psc.set_wfm_xmin(chan, 0)

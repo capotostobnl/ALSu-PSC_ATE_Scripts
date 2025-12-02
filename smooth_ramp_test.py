@@ -27,7 +27,7 @@ def smooth_ramp_test(dut: DUT, ate: ATE, section: list,
     ate.set_ignd_channel(chan)
     sleep(0.5)
     ate.set_ignd_value(IgndSP, chan, dut)
-    sleep(0.1)
+    sleep(3)
 
     WfmPV = dut.psc.WfmPV
     dut.psc.set_op_mode(chan, 0)  # Set PS Mode to SMOOTH
