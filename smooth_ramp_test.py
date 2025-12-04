@@ -31,7 +31,9 @@ def smooth_ramp_test(dut: DUT, ate: ATE, section: list,
 
     WfmPV = dut.psc.WfmPV
     dut.psc.set_op_mode(chan, 0)  # Set PS Mode to SMOOTH
+    sleep(0.2)
     dut.psc.set_rate(chan, 10)  # Set Ramp Rate to 10 Amps/Sec
+    sleep(0.2)
 
     if dut.num_channels == 2:
         if chan == 1:

@@ -58,7 +58,8 @@ if __name__ == "__main__":
                   "\n*******************************************")
             smooth_ramp_test(dut, ate, sec, chan, ctx)
 
-    if dut.bandwidth == "Fast":
+    print(dut.bandwidth)
+    if dut.bandwidth == "F":
         print("\n\n*******************************************"
               "\nBeginning FOFB Tests..."
               "\n************************************* ******")

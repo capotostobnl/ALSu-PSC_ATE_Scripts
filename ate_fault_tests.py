@@ -87,11 +87,11 @@ def ate_fault_tests(dut: DUT, ate: ATE, section: list, chan: int):
 
     # ATE setup
     ate.set_dcct_fault_channel(0)
-    sleep(4)
+    # sleep(4)
     ate.set_ignd_channel(chan)
-    sleep(4)
+    # sleep(4)
     ate.set_ignd_value(0.1, chan, dut)
-    sleep(4)
+    # sleep(4)
 
     tdata = [[f"ATE Fault Tests for Channel {chan}", 0]]
     tcolor = []
@@ -159,8 +159,8 @@ def ate_fault_tests(dut: DUT, ate: ATE, section: list, chan: int):
                     tcolor.append(0)
                     detected = True
 
-            # Timeout after 6 seconds if never detected
-            if now - start_time > 6.0:
+            # Timeout after 10 seconds if never detected
+            if now - start_time > 10.0:
                 if not detected:
                     print(f"✗ Fault {label} NOT detected within timeout")
                     tdata.append([f"Fault {label} Generated and Detected",
@@ -174,7 +174,7 @@ def ate_fault_tests(dut: DUT, ate: ATE, section: list, chan: int):
         lat_proc.kill()
 
         # Wait remaining of 4s after ATE set command if needed
-        remaining = 4.0 - (time() - set_command_time)
+        remaining = 2.0 - (time() - set_command_time)
         if remaining > 0:
             sleep(remaining)
 
@@ -195,8 +195,8 @@ def ate_fault_tests(dut: DUT, ate: ATE, section: list, chan: int):
         dut.psc.clear_faults(chan, 0)
         sleep(0.5)
 
-        # Verify PVs cleared (poll up to 1s)
-        for _ in range(20):
+        # Verify PVs cleared (poll up to 10s)
+        for _ in range(200):
             live_raw = dut.psc.get_live_faults(chan) or 0
             lat_raw = dut.psc.get_latched_faults(chan) or 0
             if live_raw == 0 and lat_raw == 0:

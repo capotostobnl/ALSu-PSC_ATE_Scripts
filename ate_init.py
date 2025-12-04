@@ -23,6 +23,7 @@ def ate_init(ate: ATE, dut: DUT) -> None:
         ate.set_imon_gain(ch, 0.25)
         print("Initialized DCCT, IGND, Mode, VMON, IMON...")
         ate.set_polarity(dut.psc.get_polarity())
+        # ate.set_polarity(0)
         ate.set_cal_state(0)
         ate.set_cal_dac(0)
         print("Initialize Polarity Mode, Cal State, Cal DAC...")
