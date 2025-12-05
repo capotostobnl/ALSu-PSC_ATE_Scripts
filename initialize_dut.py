@@ -15,6 +15,7 @@ import os
 from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Tuple
+from time import sleep
 from psc_epics import PSC
 
 
@@ -183,3 +184,14 @@ class DUT:
         pv_prefix = f"lab{{{psc_num}}}"
         print(f"pv_prefix = {pv_prefix}")
         return pv_prefix
+
+    def init(self):
+        """Initialize the PSC in the absence of the sequencer"""
+        assert self.psc is not None
+
+        for chan in range(1, self.num_channels + 1):
+            self.psc.set_power_on1(chan, 0)
+            self.psc.set_enable_on2(chan, 0)
+            sleep(0.5)
+            self.psc.set_power_on1(chan, 1)
+            self.psc.set_enable_on2(chan, 1)

@@ -30,6 +30,7 @@ if __name__ == "__main__":
     # Create Shipment directory, Report Gen Directory, and
     # Raw Data directories for this test run.
     dut.prompt_inputs()
+    dut.init()
 
     ctx, pdf_path = start_report(dut)
 
