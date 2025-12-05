@@ -4,9 +4,11 @@ EPICS adapter for the ATE / Tester IOC.
 M. Capotosto 11/11/2025
 """
 
+from time import sleep
 from typing import Literal, Iterable, Optional, Any
 from dataclasses import dataclass
 from epics import caget, caput
+from initialize_dut import DUT
 
 Mode = Literal["TEST", "CAL"]
 Polarity = Literal["BPC", "UPC"]  # bo ZNAM/ONAM
@@ -153,20 +155,48 @@ class ATE:
             raise ValueError("Fault channel must be 0..4 (NONE/CH1..CH4).")
         return self.put("DCCT:Fault:Channel-SP", int(chan))
 
-    def set_ignd_channel(self, chan: int) -> bool:
+    def set_ignd_channel(self, chan: int) -> int:
         """$(P)Ignd:Channel-SP (mbbo) — 1..4 CHn."""
         if chan not in (IgndChannel.CH1, IgndChannel.CH2, IgndChannel.CH3,
                         IgndChannel.CH4):
             raise ValueError("Ignd channel must be 1..4 (CH1..CH4).")
-        return self.put("Ignd:Channel-SP", int(chan))
+        if chan < 4:
+            self.put("Ignd:Channel-SP", f"CH{int(chan+1)}")
+        else:
+            self.put("Ignd:Channel-SP", f"CH{int(chan-1)}")
+        sleep(0.5)
+        self.put("Ignd:Channel-SP", f"CH{int(chan)}")
+        return 0
 
     def set_cal_dac(self, value: float) -> bool:
         """$(P)CAL:DAC-SP (ao)."""
         return self.put("CAL:DAC-SP", float(value))
 
-    def set_ignd_value(self, value: float) -> bool:
+    def set_ignd_value(self, value: float, chan: int, dut: DUT) -> int:
         """$(P)Ignd-SP (ao)."""
-        return self.put("Ignd-SP", float(value))
+        assert dut.psc is not None
+        self.put("Ignd-SP", float(value+0.01))
+        sleep(0.5)
+        self.put("Ignd-SP", float(value))
+
+        ignd_sp = value
+        tol = 0.01
+        i = 0
+
+        while (i <= 15):
+            val = dut.psc.get_ignd_val(chan)
+            if abs(val - ignd_sp) <= tol:
+                break
+
+            print(f"Waiting for Ignd to reach setpoint... "
+                  f"current={val:.3f}, target={ignd_sp:.3f}")
+            sleep(1)
+            i += 1
+
+        if i == 16:
+            raise RuntimeWarning("Unable to reach ignd setpoint"
+                                 " in 15 seconds!")
+        return 0
 
     def get_status(self) -> int | None:
         """$(P)Readback:Status-I (longin)."""

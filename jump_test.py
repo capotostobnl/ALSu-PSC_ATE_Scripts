@@ -16,10 +16,20 @@ from reportlab.lib.enums import TA_CENTER
 
 from report_generator import ReportContext
 from initialize_dut import DUT
+from ate_epics import ATE
 
 
-def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
+def jump_test(dut: DUT, ate: ATE, section: list, chan: int,
+              ctx: ReportContext):
     assert dut.psc is not None
+
+    IgndSP = 0.1
+    ate.set_ignd_channel(chan)
+    sleep(0.5)
+    ate.set_ignd_value(IgndSP, chan, dut)
+    print(f"Set CH{chan} ignd to {IgndSP}, waiting 5 seconds settling time...")
+    sleep(5)
+
     WfmPV = dut.psc.WfmPV
     dut.psc.set_wfm_xmin(chan, 0)
     dut.psc.set_wfm_xmax(chan, 100000)
@@ -33,14 +43,18 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
             SP = 50.05
     else:
         SP = 10.05
+
     dut.psc.set_dac_setpt(chan, SP)
+    print(f"DAC SP: {SP} \nDAC RB: {dut.psc.get_dac(chan)}(ramping)")
     dut.psc.flush_io()
     sleep(0.1)
     dut.psc.user_shot(chan)
     sleep(2)
     while dut.psc.is_user_trig_active(chan) > 0:
         sleep(1)
-        print("Wating for Jump Snapshot data.....")
+        print("Waiting for Jump Snapshot data.....")
+    sleep(4)
+    print(f"DAC SP: {SP} \nDAC RB: {dut.psc.get_dac(chan)}(ramping)")
     DAC = dut.psc.get_wfm(chan, WfmPV.DAC)
     D1 = dut.psc.get_wfm(chan, WfmPV.DCCT1)
     D2 = dut.psc.get_wfm(chan, WfmPV.DCCT2)
@@ -50,33 +64,34 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
     GND = dut.psc.get_wfm(chan, WfmPV.GND)
     SPR = dut.psc.get_wfm(chan, WfmPV.SPARE)
 
-    Tindex = np.argmax(ERR)  # type: ignore
-    DACTRAN = []
-    ERRTRAN = []
-    D1TRAN = []
-    D2TRAN = []
-    REGTRAN = []
-    VTRAN = []
-    GTRAN = []
-    STRAN = []
+    # ----------------------------------------------------------
+    # Find Tindex based on DAC jump (largest absolute derivative)
+    # ----------------------------------------------------------
+    a = np.asarray(DAC)
+    d = np.diff(a)
+    Tindex = int(np.argmax(np.abs(d)))     # <-- the correct jump location
 
-    if Tindex > 500 and Tindex < 98000:
-        for i in range((Tindex - 500), (Tindex + 500)):
-            DACTRAN.append(DAC[i])  # type: ignore
-            ERRTRAN.append(ERR[i])  # type: ignore
-            D1TRAN.append(D1[i])  # type: ignore
-            D2TRAN.append(D2[i])  # type: ignore
-            REGTRAN.append(REG[i])  # type: ignore
-            VTRAN.append(VOLT[i])  # type: ignore
-            GTRAN.append(GND[i])  # type: ignore
-            STRAN.append(SPR[i])  # type: ignore
+    # ----------------------------------------------------------
+    # HARD-CODED original window: Tindex ± 500
+    # ----------------------------------------------------------
+    start = max(0, Tindex - 500)
+    end = min(len(a), Tindex + 500)
+
+    DACTRAN = a[start:end]
+    ERRTRAN = np.asarray(ERR)[start:end]
+    D1TRAN = np.asarray(D1)[start:end]
+    D2TRAN = np.asarray(D2)[start:end]
+    REGTRAN = np.asarray(REG)[start:end]
+    VTRAN = np.asarray(VOLT)[start:end]
+    GTRAN = np.asarray(GND)[start:end]
+    STRAN = np.asarray(SPR)[start:end]
 
     f = plt.figure(figsize=(8, 4))
     gs = GridSpec(1, 3, figure=f)
     ax1 = f.add_subplot(gs[0, 0:2])
     ax2 = f.add_subplot(gs[0, 2])
 
-    ax1.plot(DAC)  # type: ignore
+    ax1.plot(DAC)
     ax1.grid(True)
     ax1.set_xlabel("10KHz Samples")
     ax1.set_ylabel("Current (A)")
@@ -94,7 +109,6 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
                              "_DAC_Jump.png")
     f.savefig(save_path)
     plt.close(f)
-    f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
 
     f = plt.figure(figsize=(8, 4))
@@ -102,7 +116,7 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
     ax1 = f.add_subplot(gs[0, 0:2])
     ax2 = f.add_subplot(gs[0, 2])
 
-    ax1.plot(ERR)  # type: ignore
+    ax1.plot(ERR)
     ax1.grid(True)
     ax1.set_xlabel("10KHz Samples")
     ax1.set_ylabel("Current (A)")
@@ -119,7 +133,6 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
                              f"Chan{chan}_ERROR_Jump.png")
     f.savefig(save_path)
     plt.close(f)
-    f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
 
     f = plt.figure(figsize=(8, 4))
@@ -127,7 +140,7 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
     ax1 = f.add_subplot(gs[0, 0:2])
     ax2 = f.add_subplot(gs[0, 2])
 
-    ax1.plot(D1)  # type: ignore
+    ax1.plot(D1)
     ax1.grid(True)
     ax1.set_xlabel("10KHz Samples")
     ax1.set_ylabel("Current (A)")
@@ -144,7 +157,6 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
                              f"Chan{chan}_DCCT1_Jump.png")
     f.savefig(save_path)
     plt.close(f)
-    f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
 
     f = plt.figure(figsize=(8, 4))
@@ -152,7 +164,7 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
     ax1 = f.add_subplot(gs[0, 0:2])
     ax2 = f.add_subplot(gs[0, 2])
 
-    ax1.plot(D2)  # type: ignore
+    ax1.plot(D2)
     ax1.grid(True)
     ax1.set_xlabel("10KHz Samples")
     ax1.set_ylabel("Current (A)")
@@ -169,7 +181,6 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
                              f"Chan{chan}_DCCT2_Jump.png")
     f.savefig(save_path)
     plt.close(f)
-    f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
 
     f = plt.figure(figsize=(8, 4))
@@ -177,7 +188,7 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
     ax1 = f.add_subplot(gs[0, 0:2])
     ax2 = f.add_subplot(gs[0, 2])
 
-    ax1.plot(REG)  # type: ignore
+    ax1.plot(REG)
     ax1.grid(True)
     ax1.set_xlabel("10KHz Samples")
     ax1.set_ylabel("Current (A)")
@@ -194,7 +205,6 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
                              f"Chan{chan}_REG_Jump.png")
     f.savefig(save_path)
     plt.close(f)
-    f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
 
     f = plt.figure(figsize=(8, 4))
@@ -202,7 +212,7 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
     ax1 = f.add_subplot(gs[0, 0:2])
     ax2 = f.add_subplot(gs[0, 2])
 
-    ax1.plot(VOLT)  # type: ignore
+    ax1.plot(VOLT)
     ax1.grid(True)
     ax1.set_xlabel("10KHz Samples")
     ax1.set_ylabel("Voltage (V)")
@@ -219,7 +229,6 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
                              f"Chan{chan}_VOLT_Jump.png")
     f.savefig(save_path)
     plt.close(f)
-    f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
 
     f = plt.figure(figsize=(8, 4))
@@ -227,11 +236,10 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
     ax1 = f.add_subplot(gs[0, 0:2])
     ax2 = f.add_subplot(gs[0, 2])
 
-    IgndSP = 0.1
-    IgndAvg = float(np.mean(GND))  # type: ignore
+    IgndAvg = float(np.mean(GND))
     print("####################IgndAvg=", IgndAvg, IgndSP)
     Diff = abs(IgndSP - IgndAvg)
-    ax1.plot(GND)  # type: ignore
+    ax1.plot(GND)
     ax1.grid(True)
     ax1.set_xlabel("10KHz Samples")
     ax1.set_ylabel("Current (A)")
@@ -290,7 +298,6 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
                              f"Chan{chan}_IGND_Jump.png")
     f.savefig(save_path)
     plt.close(f)
-    f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
 
     f = plt.figure(figsize=(8, 4))
@@ -298,7 +305,7 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
     ax1 = f.add_subplot(gs[0, 0:2])
     ax2 = f.add_subplot(gs[0, 2])
 
-    ax1.plot(SPR)  # type: ignore
+    ax1.plot(SPR)
     ax1.grid(True)
     ax1.set_xlabel("10KHz Samples")
     ax1.set_ylabel("Current (A)")
@@ -315,7 +322,6 @@ def jump_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
                              f"Chan{chan}_SPARE_Jump.png")
     f.savefig(save_path)
     plt.close(f)
-    f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
     base_style = ctx.styles["Normal"]
     mstr = "Jump Test Results:"

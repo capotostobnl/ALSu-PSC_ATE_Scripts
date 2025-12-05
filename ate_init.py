@@ -13,28 +13,20 @@ def ate_init(ate: ATE, dut: DUT) -> None:
     print("#########################################\n"
           "# **********Initializing ATE...**********\n"
           "#########################################\n")
-    for ch in range(1, 4):
+    for ch in range(1, dut.num_channels+1):
         print(f"Initializing ATE, Ch{ch}")
         ate.set_dcct_fault_channel(0)
-        ate.set_ignd_channel(1)
-        ate.set_ignd_value(0)
+        ate.set_ignd_channel(ch)
+        ate.set_ignd_value(0, ch, dut)
         ate.set_mode(ch, 0)
         ate.set_vmon_gain(ch, 0.5)
         ate.set_imon_gain(ch, 0.25)
         print("Initialized DCCT, IGND, Mode, VMON, IMON...")
         ate.set_polarity(dut.psc.get_polarity())
+        # ate.set_polarity(0)
         ate.set_cal_state(0)
         ate.set_cal_dac(0)
         print("Initialize Polarity Mode, Cal State, Cal DAC...")
-        ate.set_flt1(ch, 0)
-        sleep(4)  # Sleep for at least 3 seconds, for ATE FLT1-3 Loop Delay
-        print("Initialize FLT1...")
-        ate.set_flt2(ch, 0)
-        sleep(4)
-        print("Initialize FLT2...")
-        ate.set_fltspare(ch, 0)
-        sleep(4)
-        print("Initialize FLT Spare...")
         ate.set_pc_fault(ch, 0)
         sleep(4)
         print("Initialize PC Fault...")

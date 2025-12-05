@@ -107,33 +107,33 @@ class PSC:
     # Digital outs / modes / setpoints
 
     def set_power_on1(self, ch: int, val: int | bool) -> bool:
-        return self.put("DigOut_ON1-SP", int(val), ch=ch)
+        return self.safe_put("DigOut_ON1-SP", int(val), ch=ch)
 
     def set_enable_on2(self, ch: int, val: int | bool) -> bool:
-        return self.put("DigOut_ON2-SP", int(val), ch=ch)
+        return self.safe_put("DigOut_ON2-SP", int(val), ch=ch)
 
     def set_park(self, ch: int, val: int | bool) -> bool:
-        return self.put("DigOut_Park-SP", int(val), ch=ch)
+        return self.safe_put("DigOut_Park-SP", int(val), ch=ch)
 
     def set_digout_spare(self, ch: int, val: int | bool) -> bool:
         """Set DigOut_Spare-SP"""
-        return self.put("DigOut_Spare-SP", int(val), ch=ch)
+        return self.safe_put("DigOut_Spare-SP", int(val), ch=ch)
 
     def set_dac_setpt(self, ch: int, amps: float) -> bool:
-        return self.put("DAC_SetPt-SP", amps, ch=ch, wait=True)
+        return self.safe_put("DAC_SetPt-SP", amps, ch=ch, wait=True)
 
     def set_op_mode(self, ch: int, mode: int | str) -> bool:
-        return self.put("DAC_OpMode-SP", mode, ch=ch, wait=True)
+        return self.safe_put("DAC_OpMode-SP", mode, ch=ch, wait=True)
 
     def set_rate(self, ch: int, rate: float) -> bool:
-        return self.put("SF:AmpsperSec-SP", rate, ch=ch)
+        return self.safe_put("SF:AmpsperSec-SP", rate, ch=ch)
 
     def set_reset(self, ch: int, val: int | bool) -> bool:
-        return self.put("DigOut_Reset-SP", int(val), ch=ch)
+        return self.safe_put("DigOut_Reset-SP", int(val), ch=ch)
 
     # Triggers / status
     def user_shot(self, ch: int) -> bool:
-        return self.put("SS:Trig:Usr", 1, ch=ch, wait=True)
+        return self.safe_put("SS:Trig:Usr", 1, ch=ch, wait=True)
 
     def is_user_trig_active(self, ch: int) -> int:
         """Return 1 if user trigger active, 0 if not or if read fails."""
@@ -197,10 +197,10 @@ class PSC:
 
     # Other PVs
     def clear_faults(self, ch: int, val: int | bool) -> bool:
-        return self.put("FaultClear-SP", int(val), ch=ch)
+        return self.safe_put("FaultClear-SP", int(val), ch=ch)
 
     def set_fault_mask(self, bit: int, ch: int, val: int | bool) -> bool:
-        return self.put(f"FaultMask:B{bit}-SP", val, ch=ch)
+        return self.safe_put(f"FaultMask:B{bit}-SP", val, ch=ch)
 
     def get_live_faults(self, ch: int):
         return self.get("FaultsLive-I", ch=ch)
@@ -220,14 +220,18 @@ class PSC:
         """Read DCCT2-I"""
         return self.safe_get("DCCT2-I", ch=ch)
 
+    def get_ignd_val(self, ch: int) -> float:
+        """Get ignd value"""
+        return self.safe_get("Gnd-I", ch=ch)
+
     def get_dac(self, ch: int) -> float | None:
         """Read DAC-I"""
         return self.safe_get("DAC-I", ch=ch)
 
     def set_wfm_xmin(self, ch: int, value: float) -> bool:
         """Set the Xmin waveform value for a channel."""
-        return self.put("SS:WFM-Xmin", value, ch=ch)
+        return self.safe_put("SS:WFM-Xmin", value, ch=ch)
 
     def set_wfm_xmax(self, ch: int, value: float) -> bool:
         """Set the Xmax waveform value for a channel."""
-        return self.put("SS:WFM-Xmax", value, ch=ch)
+        return self.safe_put("SS:WFM-Xmax", value, ch=ch)

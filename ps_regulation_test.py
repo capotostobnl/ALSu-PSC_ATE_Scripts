@@ -16,21 +16,49 @@ from reportlab.lib.enums import TA_CENTER
 
 from report_generator import ReportContext
 from initialize_dut import DUT
+from ate_epics import ATE
 
 
-def ps_regulation_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
+def ps_regulation_test(dut: DUT, ate: ATE, section: list, chan: int,
+                       ctx: ReportContext):
     assert dut.psc is not None
     print(f"Preparing PSC Channel {chan} for Regulation test...")
+    ate.set_ignd_channel(chan)
+    ate.set_ignd_value(0, chan, dut)
+    print("ATE ignd Set...")
+    dut.psc.set_dac_setpt(1, 0)
     dut.psc.set_rate(chan, 10)
     dut.psc.set_dac_setpt(chan, 0)
-    dut.psc.set_enable_on2(chan, 1)
-    dut.psc.set_park(chan, 1)
-    dut.psc.set_power_on1(chan, 1)
-    sleep(1)
-    # ONstat = dut.psc.get_dig_in_b0(chan)
-    # sleep(5)
-    dut.psc.set_op_mode(chan, 0)
-    dut.psc.set_park(chan, 0)
+
+    for i in range(1, dut.num_channels+1):
+        dut.psc.set_power_on1(i, 1)
+        dut.psc.set_enable_on2(i, 1)
+        dut.psc.set_op_mode(i, 0)
+        dut.psc.set_park(i, 0)
+        dut.psc.set_dac_setpt(i, 0)
+    while True:
+        # Check for any faults on all 4 channels. If there's a fault, clear
+        # before continuing...
+        all_clear = True
+
+        for ch in range(1, dut.num_channels+1):   # 1, 2, 3, 4
+            faults = dut.psc.get_latched_faults(ch)
+
+            if faults != 0:
+                print(f"Clearing latched faults on CH{ch}: 0x{faults:X}")
+
+                dut.psc.set_reset(ch, 1)
+                dut.psc.clear_faults(ch, 1)
+                sleep(0.5)
+                dut.psc.clear_faults(ch, 0)
+                dut.psc.set_reset(ch, 0)
+
+                all_clear = False   # keep looping until all channels clear
+
+        if all_clear:
+            break
+
+    sleep(0.2)   # optional short slowdown
     if dut.num_channels == 2:
         if chan == 1:
             SP = 30
@@ -39,6 +67,7 @@ def ps_regulation_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
     else:
         SP = 10
     dut.psc.set_dac_setpt(chan, SP)
+    print("PSC rate, DAC SP, Enable, Park, and Power bits set...")
     sleep(10)
     # Collect 1 minute of data:
     print(f"Preparing to collect 60 seconds of data for Channel {chan}")
@@ -70,7 +99,6 @@ def ps_regulation_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
 
     plt.ioff()
     plt.close(f)
-    f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
 
     LRBavg = np.mean(LRB)
@@ -142,7 +170,6 @@ def ps_regulation_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
                              f"Chan{chan}_Loopback_Stability.png")
     f.savefig(save_path)
     plt.close(f)
-    f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
 
     f = plt.figure(figsize=(8, 4))
@@ -201,7 +228,6 @@ def ps_regulation_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
                              f"Chan{chan}_DCCT1_Stability.png")
     f.savefig(save_path)
     plt.close(f)
-    f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
 
     f = plt.figure(figsize=(8, 4))
@@ -259,7 +285,6 @@ def ps_regulation_test(dut: DUT, section: list, chan: int, ctx: ReportContext):
                              f"Chan{chan}_DCCT2_Stability.png")
     f.savefig(save_path)
     plt.close(f)
-    f.canvas.flush_events()  # ensure all GUI events are handled
     plt.pause(0.1)
 
     mstr = "Power Supply Regulation for Channel " + str(chan) + ":"

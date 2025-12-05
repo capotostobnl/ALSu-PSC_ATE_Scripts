@@ -63,7 +63,7 @@ def capture_udp_packets(iface="enp115s0", port=12345, timeout_s=10):
     status = "PASS" if 'udp' appears in stdout, else "FAIL".
     """
     base = f"tcpdump -i {shlex.quote(iface)} udp port {int(port)} -vv -l -n"
-    cmd = f"sudo -n timeout {int(timeout_s)} {base}"
+    cmd = f"sudo timeout {int(timeout_s)} {base}"
     try:
         res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
     except Exception as e:
@@ -82,6 +82,19 @@ def fofb_daisy_packet_monotonic_test(dut: DUT, ctx: ReportContext):
     """
     Adds FOFB TX config/verification and UDP RX capture results to the report.
     """
+
+    cmd = f"sudo arp -s 10.69.26.55 00:11:22:33:44:55"
+    try:
+        res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    except Exception as e:
+        return "FAIL", "", str(e), 999, cmd
+
+    cmd = f"./caen_fast_genpacket_loop_inf.sh"
+    process = subprocess.Popen(
+        cmd, shell=True, text=True, stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
+
     NC = int(dut.num_channels)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -118,6 +131,7 @@ def fofb_daisy_packet_monotonic_test(dut: DUT, ctx: ReportContext):
             print("Performing FOFB test because Bandwidth-Mode == Fast")
 
             # 0x0A451A37 == 10.69.26.55
+            # 0x0A008E64 == 10.0.142.100
             safe_caput(FOFB_IP_PV, int(0x0A451A37))
 
             for ch_i, pv in enumerate(FOFB_FASTADDR_PVS, start=1):
@@ -221,5 +235,6 @@ def fofb_daisy_packet_monotonic_test(dut: DUT, ctx: ReportContext):
              colors.lightgreen if status == "PASS" else colors.red)
         ])
         ctx.elements.append(t_udp)
+        process.terminate()
 
     return ctx.elements

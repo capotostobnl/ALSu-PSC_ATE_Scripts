@@ -30,6 +30,7 @@ if __name__ == "__main__":
     # Create Shipment directory, Report Gen Directory, and
     # Raw Data directories for this test run.
     dut.prompt_inputs()
+    dut.init()
 
     ctx, pdf_path = start_report(dut)
 
@@ -38,7 +39,6 @@ if __name__ == "__main__":
 
     for chan in range(1, dut.num_channels+1):
         with channel_section(ctx, chan) as sec:
-
             print("\n\n*******************************************"
                   f"\nBeginning Channel {chan} ATE Fault Tests..."
                   "\n*******************************************")
@@ -47,22 +47,24 @@ if __name__ == "__main__":
             print("\n\n*******************************************"
                   f"\nBeginning Channel {chan} Regulation Tests..."
                   "\n*******************************************")
-            ps_regulation_test(dut, sec, chan, ctx)
+            ps_regulation_test(dut, ate, sec, chan, ctx)
 
             print("\n\n*******************************************"
                   f"\nBeginning Channel {chan} Jump Tests..."
                   "\n*******************************************")
-            jump_test(dut, sec, chan, ctx)
+            jump_test(dut, ate, sec, chan, ctx)
 
             print("\n\n*******************************************"
                   f"\nBeginning Channel {chan} Smooth Ramp Tests..."
                   "\n*******************************************")
             smooth_ramp_test(dut, ate, sec, chan, ctx)
 
-    if dut.bandwidth == "Fast":
+    print(dut.bandwidth)
+    if dut.bandwidth == "F":
         print("\n\n*******************************************"
               "\nBeginning FOFB Tests..."
               "\n************************************* ******")
         fofb_daisy_packet_monotonic_test(dut, ctx)
 
     finalize_report(ctx)
+    print("Test complete! See folder for report.")
