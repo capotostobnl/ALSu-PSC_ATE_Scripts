@@ -18,6 +18,12 @@ from report_generator import ReportContext
 from initialize_dut import DUT
 from ate_epics import ATE
 
+#######################################################################
+# ******Disable Scientific Notation Conversions on X/Y Axis Plots******
+plt.rcParams['axes.formatter.useoffset'] = False
+plt.rcParams['axes.formatter.limits'] = [-7, 7]
+########################################################################
+
 
 def ps_regulation_test(dut: DUT, ate: ATE, section: list, chan: int,
                        ctx: ReportContext):

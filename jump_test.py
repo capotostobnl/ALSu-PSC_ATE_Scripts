@@ -18,6 +18,12 @@ from report_generator import ReportContext
 from initialize_dut import DUT
 from ate_epics import ATE
 
+#######################################################################
+# ******Disable Scientific Notation Conversions on X/Y Axis Plots******
+plt.rcParams['axes.formatter.useoffset'] = False
+plt.rcParams['axes.formatter.limits'] = [-7, 7]
+########################################################################
+
 
 def jump_test(dut: DUT, ate: ATE, section: list, chan: int,
               ctx: ReportContext):
@@ -86,6 +92,7 @@ def jump_test(dut: DUT, ate: ATE, section: list, chan: int,
     GTRAN = np.asarray(GND)[start:end]
     STRAN = np.asarray(SPR)[start:end]
 
+    plt.ion()
     f = plt.figure(figsize=(8, 4))
     gs = GridSpec(1, 3, figure=f)
     ax1 = f.add_subplot(gs[0, 0:2])

@@ -13,6 +13,12 @@ from reportlab.lib.units import inch
 from initialize_dut import DUT
 from report_generator import ReportContext
 
+#######################################################################
+# ******Disable Scientific Notation Conversions on X/Y Axis Plots******
+plt.rcParams['axes.formatter.useoffset'] = False
+plt.rcParams['axes.formatter.limits'] = [-7, 7]
+########################################################################
+
 
 def evr_timing_test(dut: DUT, ctx: ReportContext) -> None:
     EvrTS = dut.pv_prefix + "TS-S-I"
@@ -67,7 +73,6 @@ def evr_timing_test(dut: DUT, ctx: ReportContext) -> None:
 
     print("Collecting 30 seconds of EVR Timestamps:")
     f, ax = plt.subplots(1, 1, figsize=(7, 5))
-    plt.ion()
 
     started = False
 

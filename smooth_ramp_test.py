@@ -18,6 +18,11 @@ from report_generator import ReportContext
 from initialize_dut import DUT
 from ate_epics import ATE
 
+#######################################################################
+# ******Disable Scientific Notation Conversions on X/Y Axis Plots******
+plt.rcParams['axes.formatter.useoffset'] = False
+plt.rcParams['axes.formatter.limits'] = [-7, 7]
+########################################################################
 
 def smooth_ramp_test(dut: DUT, ate: ATE, section: list,
                      chan: int, ctx: ReportContext):
@@ -31,9 +36,9 @@ def smooth_ramp_test(dut: DUT, ate: ATE, section: list,
 
     WfmPV = dut.psc.WfmPV
     dut.psc.set_op_mode(chan, 0)  # Set PS Mode to SMOOTH
-    sleep(0.2)
+    sleep(1)
     dut.psc.set_rate(chan, 10)  # Set Ramp Rate to 10 Amps/Sec
-    sleep(0.2)
+    sleep(1)
 
     if dut.num_channels == 2:
         if chan == 1:
@@ -69,6 +74,7 @@ def smooth_ramp_test(dut: DUT, ate: ATE, section: list,
     GND = dut.psc.get_wfm(chan, WfmPV.GND)
     SPR = dut.psc.get_wfm(chan, WfmPV.SPARE)
 
+    plt.ion()
     f, ax = plt.subplots(figsize=(8, 4))
     ax.plot(DAC)  # type: ignore
     ax.grid(True)

@@ -179,6 +179,7 @@ def ate_fault_tests(dut: DUT, ate: ATE, section: list, chan: int):
             sleep(remaining)
 
         # Clear the fault
+        sleep(3)
         if setter_bool:
             setter(chan, False)
         else:
@@ -187,9 +188,9 @@ def ate_fault_tests(dut: DUT, ate: ATE, section: list, chan: int):
 
         # PSC reset/clear
         dut.psc.set_reset(chan, 1)
-        sleep(0.5)
+        sleep(1)
         dut.psc.clear_faults(chan, 1)
-        sleep(0.5)
+        sleep(1)
         dut.psc.set_reset(chan, 0)
         sleep(0.5)
         dut.psc.clear_faults(chan, 0)
