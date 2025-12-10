@@ -190,7 +190,9 @@ class ATE:
 
             print(f"Waiting for Ignd to reach setpoint... "
                   f"current={val:.3f}, target={ignd_sp:.3f}")
+            self.put("Ignd-SP", float(value))
             sleep(1)
+
             i += 1
 
         if i == 16:
