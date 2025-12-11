@@ -58,6 +58,110 @@ FAULT_TESTS = [
     (0x40,  "DCCT",  "set_dcct_fault_channel", False),
 ]
 
+
+def _run_single_fault_test(mask, label, setter, setter_bool, dut, ate, chan):
+    """Run ONE fault test and return (result_string, color_flag).
+       result_string = 'PASS' or 'FAIL'
+       color_flag = 0 for PASS, 1 for FAIL
+    """
+
+    # Start monitoring BEFORE issuing the fault
+    live_pv = dut.psc.pv("FaultsLive-I", ch=chan)
+    lat_pv = dut.psc.pv("FaultsLat-I", ch=chan)
+    live_proc, live_q = _start_camonitor(live_pv)
+    lat_proc, lat_q = _start_camonitor(lat_pv)
+    state = {"live": 0, "lat": 0}
+    start_time = time()
+    detected = False
+
+    # Prime PVs
+    prime_deadline = time() + 0.2
+    while time() < prime_deadline:
+        try:
+            state["live"] = _parse_camonitor_value(live_q.get_nowait())
+        except Empty:
+            pass
+        try:
+            state["lat"] = _parse_camonitor_value(lat_q.get_nowait())
+        except Empty:
+            pass
+        sleep(0.01)
+
+    # Trigger the fault
+    if setter_bool:
+        setter(chan, True)
+    else:
+        setter(chan)
+
+    set_command_time = time()
+
+    # PV event loop
+    while True:
+        now = time()
+        try:
+            while True:
+                state["live"] = _parse_camonitor_value(live_q.get_nowait())
+        except Empty:
+            pass
+        try:
+            while True:
+                state["lat"] = _parse_camonitor_value(lat_q.get_nowait())
+        except Empty:
+            pass
+
+        if (state["live"] & mask) or (state["lat"] & mask):
+            detected = True
+
+        if now - start_time > 10.0:
+            break
+
+        sleep(0.01)
+
+    live_proc.kill()
+    lat_proc.kill()
+
+    # Wait remaining 2 seconds after ATE command
+    remaining = 2.0 - (time() - set_command_time)
+    if remaining > 0:
+        sleep(remaining)
+
+    # Clear the fault
+    sleep(3)
+    if setter_bool:
+        setter(chan, False)
+    else:
+        setter(0)
+    sleep(4)
+
+    # PSC clear
+    dut.psc.set_reset(chan, 1)
+    sleep(1)
+    dut.psc.clear_faults(chan, 1)
+    sleep(1)
+    dut.psc.set_reset(chan, 0)
+    sleep(0.5)
+    dut.psc.clear_faults(chan, 0)
+    sleep(0.5)
+
+    # Check cleared
+    for _ in range(200):
+        if (dut.psc.get_live_faults(chan) or 0) == 0 and \
+           (dut.psc.get_latched_faults(chan) or 0) == 0:
+            break
+        sleep(0.05)
+
+    final_live = dut.psc.get_live_faults(chan) or 0
+    final_lat = dut.psc.get_latched_faults(chan) or 0
+
+    pass1 = detected
+    pass2 = (final_live == 0 and final_lat == 0)
+
+    result = "PASS" if (pass1 and pass2) else "FAIL"
+    color = 0 if result == "PASS" else 1
+
+    return result, color
+
+
 # =============================================================================
 # Main Test Routine
 # =============================================================================
