@@ -40,7 +40,19 @@ def smooth_ramp_test(dut: DUT, ate: ATE, section: list,
     dut.psc.set_rate(chan, 10)  # Set Ramp Rate to 10 Amps/Sec
     sleep(1)
 
-    if dut.num_channels == 2:
+    if dut.is_abend == True:
+        if chan == 1:
+            dut.psc.set_rate(chan, 60)  # Set Ramp Rate to 20 Amps/Sec
+            dut.psc.set_dac_setpt(chan, 0)  
+            sleep(10)
+            dut.psc.set_dac_setpt(chan, 385)  
+        else:
+            dut.psc.set_rate(chan, 30)  # Set Ramp Rate to 20 Amps/Sec
+            dut.psc.set_dac_setpt(chan, 0) 
+            sleep(10)
+            dut.psc.set_dac_setpt(chan, 185) 
+    
+    elif (dut.num_channels == 2 and not dut.is_abend):
         if chan == 1:
             dut.psc.set_dac_setpt(chan, 0)  # Set DAC to 0 Amps
             sleep(10)
@@ -50,7 +62,20 @@ def smooth_ramp_test(dut: DUT, ate: ATE, section: list,
             dut.psc.set_dac_setpt(chan, 0)  # Set DAC to 0 Amps
             sleep(10)
             dut.psc.set_dac_setpt(chan, 99.9)  # Set DAC SP to +99.9 Amps
-    else:
+
+    elif (dut.num_channels ==4 and dut.is_SD_SF):
+        if (chan == 1 or chan == 3):
+            dut.psc.set_rate(chan, 10)  # Set Ramp Rate
+            dut.psc.set_dac_setpt(chan, 0)  # Set DAC to 0 Amps
+            sleep(10)
+            dut.psc.set_dac_setpt(chan, 59)
+        if (chan == 2 or chan == 4):
+            dut.psc.set_rate(chan, 20)  # Set Ramp Rate
+            dut.psc.set_dac_setpt(chan, 0)  # Set DAC to 0 Amps
+            sleep(10)
+            dut.psc.set_dac_setpt(chan, 124)
+
+    elif (dut.num_channels ==4 and not dut.is_SD_SF):
         dut.psc.set_dac_setpt(chan, -23.9)  # Set DAC to -23.9 Amps
         sleep(10)  # Wait 10 Seconds for Ramp to Complete
         print(f"DAC SP: -23.9 \nDAC RB: {dut.psc.get_dac(chan)}")

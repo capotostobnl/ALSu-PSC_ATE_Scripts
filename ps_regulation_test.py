@@ -28,6 +28,7 @@ plt.rcParams['axes.formatter.limits'] = [-7, 7]
 def ps_regulation_test(dut: DUT, ate: ATE, section: list, chan: int,
                        ctx: ReportContext):
     assert dut.psc is not None
+    #dut.psc.set_fault_mask(0, )
     print(f"Preparing PSC Channel {chan} for Regulation test...")
     ate.set_ignd_channel(chan)
     ate.set_ignd_value(0, chan, dut)
@@ -65,16 +66,35 @@ def ps_regulation_test(dut: DUT, ate: ATE, section: list, chan: int,
             break
 
     sleep(0.2)   # optional short slowdown
-    if dut.num_channels == 2:
+    if dut.is_abend == True:
+        if chan == 1:
+            SP = 200
+        else:
+            SP=100
+
+    elif (dut.num_channels == 2 and dut.is_abend == False):
         if chan == 1:
             SP = 30
         else:
             SP = 50
+    
+    elif (dut.num_channels == 4 and dut.is_SD_SF == True):
+        if (chan == 1 or chan == 3):
+            SP = 30
+        elif (chan == 2 or chan == 4):
+            SP = 65
+
     else:
         SP = 10
     dut.psc.set_dac_setpt(chan, SP)
+    print(f"Chan: {chan}, SP: {SP}")
     print("PSC rate, DAC SP, Enable, Park, and Power bits set...")
-    sleep(10)
+    if dut.is_abend == False:
+        print("Sleeping 10 seconds for currents to stabilize...")
+        sleep(10)
+    else:
+        print("Sleeping 30 seconds for currents to stabilize...")
+        sleep(30)
     # Collect 1 minute of data:
     print(f"Preparing to collect 60 seconds of data for Channel {chan}")
     LRB = []

@@ -41,6 +41,10 @@ class DUT:
     pv_prefix: str = ""
     psc: PSC | None = None
 
+    # --- SPECIALTY PSCS ---
+    is_abend: bool = False
+    is_SD_SF: bool = False
+
     # --- filesystem / run info ---
     report_dir: str = field(init=False, default="")
     raw_data_dir: str = field(init=False, default="")
@@ -71,12 +75,41 @@ class DUT:
 
         # Populate the configuration from the PSC PVs
         self.query_psc_config()
+        if self.num_channels == 2:
+            self.query_2ch_type()
+        else:
+            self.query_4ch_type()
+        
 
         # Create directory structure...
         self.report_dir = \
             self.make_report_dir()
         self.raw_data_dir, self.dir_timestamp = \
             self.make_rawdata_subdir()
+
+    def query_2ch_type(self) -> bool:
+        if self.psc is None:
+            raise RuntimeError("PSC adapter not initialized before \n"
+                               "calling query_psc_config()")
+        print("Choose unit type: \n\n 1. AR-R3 ABEND/QFA \n\n 2. AR-R1 Standard\n")
+        unit_type_loc = int(input("Enter Type: "))
+        if unit_type_loc == 1:
+            self.is_abend = True
+        elif unit_type_loc == 2:
+            self.is_abend = False
+        return self.is_abend
+
+    def query_4ch_type(self) -> bool:
+        if self.psc is None:
+            raise RuntimeError("PSC adapter not initialized before \n"
+                               "calling query_psc_config()")
+        print("Choose unit type: \n\n 1. AR-R2 AR-SD-SF \n\n 2. AR-R1 Standard\n")
+        unit_type_loc = int(input("Enter Type: "))
+        if unit_type_loc == 1:
+            self.is_SD_SF = True
+        elif unit_type_loc == 2:
+            self.is_SD_SF = False
+        return self.is_SD_SF
 
     def query_psc_config(self) -> None:
         """Get values from PSC about unit type from PVs"""

@@ -42,17 +42,38 @@ def jump_test(dut: DUT, ate: ATE, section: list, chan: int,
     dut.psc.set_op_mode(chan, 3)  # Set Mode to Jump
     dut.psc.flush_io()
 
-    if dut.num_channels == 2:
+
+    if dut.is_abend == True:
+        if chan == 1:
+            SP = 200.5
+        else:
+            SP=100.5
+
+    elif dut.num_channels == 2:
         if chan == 1:
             SP = 30.05
         else:
             SP = 50.05
+    
+    elif dut.is_SD_SF == True:
+        if (chan == 1 or chan == 3):
+            SP = 30.05 # 50mA jump 
+        
+        elif (chan == 2 or chan == 4):
+            SP =  65.1# 100mA Jump
+
     else:
         SP = 10.05
 
     dut.psc.set_dac_setpt(chan, SP)
     print(f"DAC SP: {SP} \nDAC RB: {dut.psc.get_dac(chan)}(ramping)")
     dut.psc.flush_io()
+
+    SP = int(SP)
+    while int(dut.psc.get_dac(chan)) not in range(SP-1, SP+1):
+        print("Waiting for DAC SP to stabilize")
+        dut.psc.set_dac_setpt(chan, SP)
+    print(f"DAC SP: {SP} \nDAC RB: {dut.psc.get_dac(chan)}(ramping)")
     sleep(0.1)
     dut.psc.user_shot(chan)
     sleep(2)
