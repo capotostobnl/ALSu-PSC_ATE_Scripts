@@ -3,17 +3,17 @@
 M. Capotosto 11/11/2025
 """
 
-from ate_epics import ATE
+from EPICS_Adapters.ate_epics import ATE
 from initialize_dut import DUT
 from report_generator import start_report, finalize_report, \
     channel_section
-from evr_timing_test import evr_timing_test
 from ate_init import ate_init
-from ate_fault_tests import ate_fault_tests
-from ps_regulation_test import ps_regulation_test
-from jump_test import jump_test
-from smooth_ramp_test import smooth_ramp_test
-from fofb_test import \
+from Functional_Tests.evr_timing_test import evr_timing_test
+from Functional_Tests.ate_fault_tests import ate_fault_tests
+from Functional_Tests.ps_regulation_test import ps_regulation_test
+from Functional_Tests.jump_test import jump_test
+from Functional_Tests.smooth_ramp_test import smooth_ramp_test
+from Functional_Tests.fofb_test import \
     fofb_daisy_packet_monotonic_test
 
 

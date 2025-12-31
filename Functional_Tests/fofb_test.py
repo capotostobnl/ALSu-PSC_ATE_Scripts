@@ -65,7 +65,8 @@ def capture_udp_packets(iface="enp115s0", port=12345, timeout_s=10):
     base = f"tcpdump -i {shlex.quote(iface)} udp port {int(port)} -vv -l -n"
     cmd = f"sudo timeout {int(timeout_s)} {base}"
     try:
-        res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        res = subprocess.run(cmd, shell=True, capture_output=True, text=True,
+                             check=False)
     except Exception as e:
         return "FAIL", "", str(e), 999, cmd
     out = res.stdout or ""
@@ -89,7 +90,7 @@ def fofb_daisy_packet_monotonic_test(dut: DUT, ctx: ReportContext):
     except Exception as e:
         return "FAIL", "", str(e), 999, cmd
 
-    cmd = f"./caen_fast_genpacket_loop_inf.sh"
+    cmd = "./Functional_Tests/caen_fast_genpacket_loop_inf.sh"
     process = subprocess.Popen(
         cmd, shell=True, text=True, stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL
