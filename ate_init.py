@@ -1,6 +1,6 @@
 """ATE Initializtion Submodule
 Modified M. Capotosto 11-9-2025
-Original: T. Caracappy
+Original: T. Caracappa
 """
 
 from time import sleep
@@ -9,6 +9,27 @@ from initialize_dut import DUT
 
 
 def ate_init(ate: ATE, dut: DUT) -> None:
+    """
+    Initializes the ATE and applies default safety settings for
+    all DUT channels.
+
+    Iterates through each channel of the Device Under Test (DUT) to perform a
+    standard initialization sequence:
+      - Disables DCCT fault channels.
+      - Resets Ignd (Ground Current) to 0.
+      - Sets mode to TEST (0) and applies default gains (Vmon=0.5, Imon=0.25).
+      - Syncs polarity with the hardware state.
+      - Disables calibration mode and resets the calibration DAC.
+      - Clears PC faults.
+
+    Args:
+        ate: The ATE interface instance used to control the tester hardware.
+        dut: The Device Under Test instance containing configuration (e.g.,
+             num_channels) and the PSC interface.
+
+    Raises:
+        AssertionError: If the DUT does not have a valid PSC interface.
+    """
     assert dut.psc is not None
     print("#########################################\n"
           "# **********Initializing ATE...**********\n"

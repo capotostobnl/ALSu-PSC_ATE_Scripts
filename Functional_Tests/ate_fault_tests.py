@@ -1,12 +1,32 @@
-"""ATE Fault Test Submodule
-Modified M. Capotosto 12-01-2025
-Original: T. Caracappy
 """
+ATE Fault Test Submodule
+
+This module executes automated fault testing for Power Supply
+Controllers (PSC). It interfaces with the Automated Test Equipment
+(ATE) to inject specific hardware faults (e.g., Interlocks,
+DCCT faults) and verifies that the PSC correctly detects and latches
+these faults via EPICS PV monitoring.
+
+Key Features:
+    - **EpicsMonitor**: A context manager that wraps `camonitor` in a
+      background thread to capture transient fault events without blocking
+      the test execution.
+    - **Retry Logic**: Both fault detection and clearing sequences include
+      automatic retries to handle timing jitter or hardware race conditions.
+    - **Report Generation**: Automatically builds a color-coded status table
+      for the PDF test report.
+
+Modified: M. Capotosto 1-1-2026
+"""
+
 from __future__ import annotations
 import subprocess
 import threading
+import time  # Fix: Import the module, not specific functions, to \
+#            # avoid conflicts
 from queue import Queue, Empty
-from time import sleep, time
+from typing import Any
+
 from reportlab.lib.units import inch
 from reportlab.platypus import Table, Spacer
 from reportlab.lib import colors
@@ -19,37 +39,104 @@ from EPICS_Adapters.ate_epics import ATE
 # =============================================================================
 
 
-def _enqueue_output(pipe, queue: Queue):
-    """Non-blocking line-reading thread for camonitor output."""
-    for line in iter(pipe.readline, b""):
-        queue.put(line.decode(errors="ignore"))
-    pipe.close()
+class EpicsMonitor:
+    """
+    Context manager that spawns a 'camonitor' subprocess to watch a PV.
+    Ensures the background process is killed strictly upon exit to prevent
+    zombie processes.
 
+    Attributes:
+        pvname (str): The EPICS process variable to monitor.
+        last_known_value (int): The most recent integer value parsed
+                                from stdout.
+    """
+    def __init__(self, pvname: str):
+        self.pvname = pvname
+        self.process: subprocess.Popen | None = None
+        self.queue: Queue = Queue()
+        self.thread: threading.Thread | None = None
+        self.last_known_value: int = 0
+        self.running = False
 
-def _start_camonitor(pvname: str) -> tuple[subprocess.Popen, Queue]:
-    """Start camonitor <pvname> and return (process, queue)."""
-    proc = subprocess.Popen(
-        ["camonitor", pvname],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    q = Queue()
-    threading.Thread(target=_enqueue_output, args=(proc.stdout, q),
-                     daemon=True).start()
-    return proc, q
+    def _enqueue_output(self, pipe):
+        """
+        Background thread entry point.
+        Reads lines from the subprocess stdout and pushes them to the queue.
+        """
+        try:
+            for line in iter(pipe.readline, b""):
+                self.queue.put(line.decode(errors="ignore"))
+        except (ValueError, OSError):
+            pass  # Process likely killed
+        finally:
+            pipe.close()
 
+    def __enter__(self):
+        """Start the camonitor process and reader thread."""
+        self.process = subprocess.Popen(
+            ["camonitor", self.pvname],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            bufsize=1,  # Line buffered
+            close_fds=True  # Ensure file descriptors aren't leaked
+        )
+        self.running = True
+        self.thread = threading.Thread(
+            target=self._enqueue_output,
+            args=(self.process.stdout,),
+            daemon=True
+        )
+        self.thread.start()
+        return self
 
-def _parse_camonitor_value(line: str) -> int:
-    """Extract final integer from camonitor line."""
-    try:
-        return int(line.strip().split()[-1])
-    except Exception:
-        return 0
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Kill the process immediately when leaving the 'with' block."""
+        self.running = False
+        if self.process:
+            try:
+                self.process.terminate()  # Try nice termination first
+                # give it a moment or just kill if timing is critical
+                # For tests, kill is usually fine and faster
+                self.process.kill()
+                self.process.wait(timeout=1)
+            except (subprocess.TimeoutExpired, OSError):
+                pass
+
+            # Ensure pipes are closed to prevent FD leaks
+            if self.process.stdout:
+                self.process.stdout.close()
+            if self.process.stderr:
+                self.process.stderr.close()
+
+    def get_latest(self) -> int:
+        """
+        Drains the queue to get the most recent value.
+        Returns the last seen value (or 0 if nothing seen yet).
+        """
+        # Drain the queue to get the freshest update
+        latest_line = None
+        while not self.queue.empty():
+            try:
+                latest_line = self.queue.get_nowait()
+            except Empty:
+                break
+
+        if latest_line:
+            try:
+                # Format: "PVNAME   <date> <time>   VALUE"
+                # We want the last token.
+                val_str = latest_line.strip().split()[-1]
+                self.last_known_value = int(val_str)
+            except (ValueError, IndexError):
+                # Ignore parsing errors (e.g., disconnection messages)
+                pass
+
+        return self.last_known_value
+
 
 # =============================================================================
 # Fault Configuration Table
 # =============================================================================
-
 
 FAULT_TESTS = [
     (0x80,  "#1",    "set_flt1", True),
@@ -59,105 +146,113 @@ FAULT_TESTS = [
 ]
 
 
-def _run_single_fault_test(mask, label, setter, setter_bool, dut, ate, chan):
-    """Run ONE fault test with internal retries.
-       Returns overall_result ("PASS"/"FAIL") and color_flag (0/1).
+def _run_single_fault_test(mask: int, label: str, setter: Any,
+                           setter_bool: bool, dut: DUT, chan: int) -> \
+                           tuple[str, int]:
+    """
+    Run ONE fault test sequence (Trigger -> Detect -> Clear) with retries.
+
+    Args:
+        mask (int): The bitmask to check in the Fault Status word.
+        label (str): Human-readable name of the fault (e.g., "#1", "DCCT").
+        setter (func): The ATE method used to inject the fault.
+        setter_bool (bool): True if the setter takes (chan, bool), False if
+                            it takes (chan) or (0).
+        dut (DUT): Device Under Test interface.
+        chan (int): The channel to test.
+
+    Returns:
+        tuple[str, int]: ("PASS"/"FAIL", ColorFlag). ColorFlag 0=Green, 1=Red.
     """
 
     # -------------------------------------------------------------
     # Helper: run the "fault trigger + detection" portion once
     # -------------------------------------------------------------
-    def run_detection_pass():
+    def run_detection_pass() -> bool:
+        """
+        Injects the fault via ATE and monitors EPICS for the
+        corresponding bit.
+
+        Returns True if the fault is detected in either Live or
+        Latched records.
+        """
         live_pv = dut.psc.pv("FaultsLive-I", ch=chan)
         lat_pv = dut.psc.pv("FaultsLat-I", ch=chan)
-        live_proc, live_q = _start_camonitor(live_pv)
-        lat_proc, lat_q = _start_camonitor(lat_pv)
-        state = {"live": 0, "lat": 0}
-        start_time = time()
-        detected = False
 
-        # Prime PVs
-        prime_deadline = time() + 0.2
-        while time() < prime_deadline:
-            try:
-                state["live"] = _parse_camonitor_value(live_q.get_nowait())
-            except Empty:
-                pass
-            try:
-                state["lat"] = _parse_camonitor_value(lat_q.get_nowait())
-            except Empty:
-                pass
-            sleep(0.01)
+        # Context manager handles cleanup automatically
+        with EpicsMonitor(live_pv) as live_mon, EpicsMonitor(lat_pv) \
+                as lat_mon:
 
-        # Trigger the fault
-        if setter_bool:
-            setter(chan, True)
-        else:
-            setter(chan)
+            # Prime the monitors (drain initial values)
+            time.sleep(0.5)  # Increased slightly to ensure camonitor starts
+            live_mon.get_latest()
+            lat_mon.get_latest()
 
-        set_command_time = time()
+            # Trigger the fault
+            if setter_bool:
+                setter(chan, True)
+            else:
+                setter(chan)
 
-        # PV event loop
-        while True:
-            now = time()
-            try:
-                while True:
-                    state["live"] = _parse_camonitor_value(live_q.get_nowait())
-            except Empty:
-                pass
-            try:
-                while True:
-                    state["lat"] = _parse_camonitor_value(lat_q.get_nowait())
-            except Empty:
-                pass
+            set_command_time = time.time()
+            detected = False
 
-            if (state["live"] & mask) or (state["lat"] & mask):
-                detected = True
+            # Watch for fault (timeout 10s)
+            start_wait = time.time()
+            while (time.time() - start_wait) < 10.0:
+                live_val = live_mon.get_latest()
+                lat_val = lat_mon.get_latest()
 
-            if now - start_time > 10.0:
-                break
+                if (live_val & mask) or (lat_val & mask):
+                    detected = True
+                    break
 
-            sleep(0.01)
+                time.sleep(0.05)
 
-        live_proc.kill()
-        lat_proc.kill()
+            # Ensure minimum dwell time after command (for hardware stability)
+            elapsed = time.time() - set_command_time
+            if elapsed < 2.0:
+                time.sleep(2.0 - elapsed)
 
-        # ensure 2 sec after ATE command
-        remaining = 2.0 - (time() - set_command_time)
-        if remaining > 0:
-            sleep(remaining)
-
-        return detected
+            return detected
 
     # -------------------------------------------------------------
-    # Helper: run the clearing/reset portion once
+    # Helper: Clearing Pass
     # -------------------------------------------------------------
-    def run_clear_pass():
-        # Clear the fault
-        sleep(3)
+    def run_clear_pass() -> bool:
+        """
+        Removes the ATE fault condition, resets the PSC, and verifies
+        that all fault bits have cleared.
+        """
+
+        # 1. Remove the ATE fault condition
         if setter_bool:
             setter(chan, False)
         else:
             setter(0)
-        sleep(4)
 
-        # PSC clear
+        # Hardware soak
+        time.sleep(4)
+
+        # 2. Reset the PSC
         dut.psc.set_reset(chan, 1)
-        sleep(1)
+        time.sleep(1)
         dut.psc.clear_faults(chan, 1)
-        sleep(1)
+        time.sleep(1)
         dut.psc.set_reset(chan, 0)
-        sleep(0.5)
+        time.sleep(0.5)
         dut.psc.clear_faults(chan, 0)
-        sleep(0.5)
+        time.sleep(0.5)
 
-        # Check PVs cleared
+        # 3. Verify PVs show clear
+        # Poll for up to 10 seconds (200 * 0.05s)
         for _ in range(200):
             live_raw = dut.psc.get_live_faults(chan) or 0
             lat_raw = dut.psc.get_latched_faults(chan) or 0
+
             if live_raw == 0 and lat_raw == 0:
                 return True
-            sleep(0.05)
+            time.sleep(0.05)
 
         return False
 
@@ -171,7 +266,7 @@ def _run_single_fault_test(mask, label, setter, setter_bool, dut, ate, chan):
             detected_ok = True
             break
         print("Detection failed; retry in 3 seconds...")
-        sleep(3)
+        time.sleep(3)
 
     # -------------------------------------------------------------
     # PHASE 2: Clearing retries (up to 3 times)
@@ -183,7 +278,7 @@ def _run_single_fault_test(mask, label, setter, setter_bool, dut, ate, chan):
             cleared_ok = True
             break
         print("Clear failed; retry in 3 seconds...")
-        sleep(3)
+        time.sleep(3)
 
     # -------------------------------------------------------------
     # FINAL RESULTS
@@ -198,9 +293,21 @@ def _run_single_fault_test(mask, label, setter, setter_bool, dut, ate, chan):
 # Main Test Routine
 # =============================================================================
 
-
 def ate_fault_tests(dut: DUT, ate: ATE, section: list, chan: int):
-    """Main driver for automated ATE Fault Testing using event-driven EPICS."""
+    """
+    Main driver for automated ATE Fault Testing using event-driven EPICS.
+
+    Orchestrates the testing of multiple hardware fault conditions (defined in
+    FAULT_TESTS) by sequentially injecting, detecting, and clearing them.
+    Generates a ReportLab Table with color-coded results.
+
+    Args:
+        dut (DUT): Device Under Test abstraction.
+        ate (ATE): Automated Test Equipment control abstraction.
+        section (list): ReportLab flowables list to append the results
+                        table to.
+        chan (int): The channel number under test.
+    """
 
     assert dut.psc is not None
 
@@ -209,49 +316,44 @@ def ate_fault_tests(dut: DUT, ate: ATE, section: list, chan: int):
     print("==============================================")
     print(f"Channel: {chan}\n")
 
-    # Basic PSC setup (fast hardware)
+    # Basic PSC setup
     dut.psc.set_dac_setpt(chan, 0)
-    sleep(0.5)
+    time.sleep(0.5)
     dut.psc.set_power_on1(chan, 0)
-    sleep(0.5)
+    time.sleep(0.5)
     dut.psc.set_enable_on2(chan, 0)
-    sleep(0.5)
+    time.sleep(0.5)
     dut.psc.set_park(chan, 0)
-    sleep(0.5)
+    time.sleep(0.5)
     dut.psc.set_rate(chan, 4)
-    sleep(0.5)
+    time.sleep(0.5)
 
     # ATE setup
     ate.set_dcct_fault_channel(0)
-    # sleep(4)
     ate.set_ignd_channel(chan)
-    # sleep(4)
     ate.set_ignd_value(0.1, chan, dut)
-    # sleep(4)
 
     tdata = [[f"ATE Fault Tests for Channel {chan}", 0]]
-    tcolor = []
+    tcolor = []  # 0 for Green, 1 for Red
 
     # -------------------------------------------------------------------------
-    # Loop over all fault tests
+    # Execution Loop
     # -------------------------------------------------------------------------
-
     for mask, label, method_name, setter_bool in FAULT_TESTS:
         print(f"\n--- Testing Fault {label} ---")
+
+        # Dynamic method retrieval
         setter = getattr(ate, method_name)
 
-        # The helper now includes full 3x retries for detection & clear
         result, color = _run_single_fault_test(
-            mask, label, setter, setter_bool, dut, ate, chan
+            mask, label, setter, setter_bool, dut, chan
         )
 
         tdata.append([f"Fault {label} Generated and Cleared", result])
         tcolor.append(color)
 
-
-
     # -------------------------------------------------------------------------
-    # Build ReportLab Table
+    # Build Report
     # -------------------------------------------------------------------------
     row_h = [0.35 * inch] + [0.27 * inch] * (len(tdata) - 1)
     col_w = [4 * inch, 2 * inch]

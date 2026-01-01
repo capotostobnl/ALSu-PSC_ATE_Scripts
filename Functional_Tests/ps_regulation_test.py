@@ -1,7 +1,6 @@
 """Power Supply Regulation Test
 
-Modified M. Capotosto 11-9-2025
-Original: T. Caracappa
+Modified M. Capotosto 12/31/2025
 """
 import os
 from time import sleep

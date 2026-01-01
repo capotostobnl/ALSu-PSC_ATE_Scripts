@@ -1,6 +1,6 @@
 """EVR Timing Test Submodule
-Modified M. Capotosto 11-9-2025
-Original: T. Caracappy
+Modified M. Capotosto 1/1/2026
+Original: Tony Caracappa
 """
 
 import os
@@ -21,8 +21,28 @@ plt.rcParams['axes.formatter.limits'] = [-7, 7]
 
 
 def evr_timing_test(dut: DUT, ctx: ReportContext) -> None:
-    EvrTS = dut.pv_prefix + "TS-S-I"
-    EVRdate = dut.pv_prefix + "Timestamp-I.VALA"
+    """
+    Verifies the EVR (Event Receiver) timestamp functionality over a
+    30-second interval.
+
+    This test performs the following steps:
+      1. Resets the EVR logic via EPICS.
+      2. Waits for the timestamp to start incrementing (initial tick).
+      3. Records timestamps for 30 seconds.
+      4. Verifies that every time increment is exactly 1 second.
+      5. Generates a validation plot and appends it to the PDF report.
+
+    Args:
+        dut: The Device Under Test instance containing PV prefixes and
+             configuration.
+        ctx: The ReportContext for storing test results and generating the PDF.
+
+    Raises:
+        RuntimeError: If critical PVs are unreachable, or if the EVR timestamp
+                      fails to increment (stalls) for more than 5 seconds.
+    """
+    evr_ts_pv = dut.pv_prefix + "TS-S-I"
+    evr_date_pv = dut.pv_prefix + "Timestamp-I.VALA"
 
     # --- Program EVR and reset, but wait for the puts to complete ---
     caput(f"{dut.pv_prefix}EVR:1Hz-EventNo-SP", 32, wait=True, timeout=2.0)
@@ -33,43 +53,43 @@ def evr_timing_test(dut: DUT, ctx: ReportContext) -> None:
     # OPTIONAL: short settle time
     sleep(0.5)
 
-    TS: list[float] = []
-    Telapse: list[float] = []
+    timestamp: list[float] = []
+    elapsed_time: list[float] = []
 
     # --- Get date string (same as before) ---
-    date_array = caget(EVRdate)
+    date_array = caget(evr_date_pv)
     if date_array is None:
         date_text = ""
     else:
         date_text = "".join(chr(i) for i in date_array if i != 0)
 
     # --- Wait for the first EVR tick after reset ---
-    initial_ts = caget(EvrTS)
+    initial_ts = caget(evr_ts_pv)
     if initial_ts is None:
-        raise RuntimeError(f"PV {EvrTS} returned None after EVR reset")
+        raise RuntimeError(f"PV {evr_ts_pv} returned None after EVR reset")
 
     print("Waiting for first EVR timestamp tick...")
-    T0 = None
-    Tlast = None
+    t0 = None
+    t_last = None
     for _ in range(20):  # ~10 seconds max (with 0.5 s sleeps)
-        TM = caget(EvrTS)
-        if TM is None:
+        current_ts = caget(evr_ts_pv)
+        if current_ts is None:
             sleep(0.5)
             continue
-        if TM != initial_ts:
-            T0 = TM
-            Tlast = TM
+        if current_ts != initial_ts:
+            t0 = current_ts
+            t_last = current_ts
             break
         sleep(0.5)
 
-    if T0 is None or Tlast is None:
+    if t0 is None or t_last is None:
         raise RuntimeError("EVR timestamp never started after reset.")
 
-    print(f"First tick detected: T0 = {T0}")
+    print(f"First tick detected: T0 = {t0}")
 
     i = 0
-    TSerror = 0
-    zeroCnt = 0
+    ts_error = 0
+    zero_count = 0
 
     print("Collecting 30 seconds of EVR Timestamps:")
     f, ax = plt.subplots(1, 1, figsize=(7, 5))
@@ -78,34 +98,36 @@ def evr_timing_test(dut: DUT, ctx: ReportContext) -> None:
 
     # --- Main acquisition loop (mostly unchanged) ---
     while i < 31:
-        TM = caget(EvrTS)
-        if TM is None:
-            raise RuntimeError(f"PV {EvrTS} returned None")
+        current_ts = caget(evr_ts_pv)
+        if current_ts is None:
+            raise RuntimeError(f"PV {evr_ts_pv} returned None")
 
-        TD = TM - Tlast
+        time_diff = current_ts - t_last
 
-        if TD > 0:
+        if time_diff > 0:
             if not started:
-                # First usable tick: initialize T0/Tlast and don't check TD yet
-                T0 = TM
-                Tlast = TM
+                # First usable tick: initialize T0/t_last and don't check
+                # time_diff yet
+                t0 = current_ts
+                t_last = current_ts
                 started = True
-                Telapse.append(0.0)
-                TS.append(0.0)
-                print(f"First stable tick: T0 = {T0}")
+                elapsed_time.append(0.0)
+                timestamp.append(0.0)
+                print(f"First stable tick: T0 = {t0}")
             else:
-                rel = TM - T0
-                Telapse.append(rel)
-                if TD != 1:
-                    TSerror = 1
-                TS.append(rel)
-                print(f"TD={TD} EvrTS[{i}] = {TM}  : Error = {TSerror}")
-                Tlast = TM
+                rel = current_ts - t0
+                elapsed_time.append(rel)
+                if time_diff != 1:
+                    ts_error = 1
+                timestamp.append(rel)
+                print(f"TD={time_diff} EvrTS[{i}] = {current_ts}  : "
+                      f"Error = {ts_error}")
+                t_last = current_ts
                 i += 1
-            zeroCnt = 0
+            zero_count = 0
         else:
-            zeroCnt += 1
-            if zeroCnt > 5:
+            zero_count += 1
+            if zero_count > 5:
                 raise RuntimeError("Timestamp Not Changed for 5 seconds..."
                                    "Stopping Program.")
 
@@ -113,13 +135,13 @@ def evr_timing_test(dut: DUT, ctx: ReportContext) -> None:
 
         # --- Plot update ---
         ax.clear()
-        ax.plot(Telapse, TS, "-o")
+        ax.plot(elapsed_time, timestamp, "-o")
         ax.grid(True)
         ax.set_xlabel("Elapsed Time (Seconds)")
         ax.set_ylabel("TmStamp - T0")
         ax.set_title("EVR Timestamp Test")
 
-        mstr = f"T0: {T0} = {date_text}"
+        mstr = f"T0: {t0} = {date_text}"
         ax.text(
             0.05,
             0.95,
@@ -132,7 +154,7 @@ def evr_timing_test(dut: DUT, ctx: ReportContext) -> None:
         plt.pause(0.01)
 
     # PASS/FAIL annotation (unchanged)
-    if TSerror == 0:
+    if ts_error == 0:
         mstr = "Test: All time increments equal 1 second? : PASS"
         ax.text(
             0.2,

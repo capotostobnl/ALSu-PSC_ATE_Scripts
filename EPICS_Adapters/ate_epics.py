@@ -1,13 +1,14 @@
 """
 EPICS adapter for the ATE / Tester IOC.
 
-M. Capotosto 11/11/2025
+M. Capotosto 1/1/2026
 """
 
 from time import sleep
 from typing import Literal, Iterable, Optional, Any
 from dataclasses import dataclass
 from epics import caget, caput
+from epics.ca import ChannelAccessException
 from initialize_dut import DUT
 
 Mode = Literal["TEST", "CAL"]
@@ -16,6 +17,7 @@ CalState = Literal["OFF", "ON"]   # bo ZNAM/ONAM
 
 
 class FaultChannel:
+    """Enumeration for DCCT Fault Channels."""
     NONE = 0
     CH1 = 1
     CH2 = 2
@@ -24,6 +26,7 @@ class FaultChannel:
 
 
 class IgndChannel:
+    """Enumeration for Ground Current Channels."""
     CH1 = 1
     CH2 = 2
     CH3 = 3
@@ -31,11 +34,14 @@ class IgndChannel:
 
 
 def _as_int_bool(val: int | bool) -> int:
+    """Converts a value to 0 or 1."""
     return int(bool(val))
 
 
 def _as_mode(value: int | str) -> int:
-    """TEST->0, CAL->1; integers pass through (0/1)."""
+    """
+    Normalizes input to integer mode (0 for TEST, 1 for CAL).
+    """
     if isinstance(value, str):
         v = value.strip().upper()
         if v == "TEST":
@@ -49,7 +55,9 @@ def _as_mode(value: int | str) -> int:
 
 
 def _as_cal_state(value: int | str | bool) -> int:
-    """OFF->0, ON->1; bool maps to 0/1."""
+    """
+    Normalizes input to integer state (0 for OFF, 1 for ON).
+    """
     if isinstance(value, bool):
         return int(value)
     if isinstance(value, str):
@@ -65,7 +73,9 @@ def _as_cal_state(value: int | str | bool) -> int:
 
 
 def _as_polarity(value: int | str) -> int:
-    """BPC->0, UPC->1; integers pass (0/1)."""
+    """
+    Normalizes input to integer polarity (0 for BPC, 1 for UPC).
+    """
     if isinstance(value, str):
         v = value.strip()
         if (v == "BPC" or v == "Bipolar"):
@@ -96,9 +106,21 @@ class ATE:
 
     # ---------------- PV building ----------------
     def _ch(self, ch: int) -> str:
+        """Formats the channel segment string."""
         return self.ch_fmt.format(ch=ch)
 
     def pv(self, suffix: str, *, ch: Optional[int] = None) -> str:
+        """
+        Constructs a full PV name.
+
+        Args:
+            suffix: The specific signal name (e.g., 'Mode-SP').
+            ch: Optional channel number (1-4). If provided, inserts the
+                channel segment.
+
+        Returns:
+            str: The full PV string.
+        """
         if ch is None:
             return f"{self.prefix}{suffix}"
         return f"{self.prefix}{self._ch(ch)}{suffix}"
@@ -107,11 +129,36 @@ class ATE:
     def get(self, suffix: str, *, ch: Optional[int] = None,
             as_string: bool = False,
             timeout: Optional[float] = None) -> Any:
+        """
+        Performs a caget operation.
+
+        Args:
+            suffix: The PV suffix.
+            ch: Channel number (optional).
+            as_string: If True, returns the string representation.
+            timeout: Custom timeout, defaults to self.timeout.
+
+        Returns:
+            The value of the PV.
+        """
         return caget(self.pv(suffix, ch=ch), as_string=as_string,
                      timeout=timeout or self.timeout)
 
     def put(self, suffix: str, value: Any, *, ch: Optional[int] = None,
             wait: bool = True, timeout: Optional[float] = None) -> bool:
+        """
+        Performs a caput operation.
+
+        Args:
+            suffix: The PV suffix.
+            value: Value to write.
+            ch: Channel number (optional).
+            wait: Whether to wait for processing.
+            timeout: Custom timeout, defaults to self.timeout.
+
+        Returns:
+            bool: True if successful, False otherwise.
+        """
         return bool(caput(self.pv(suffix, ch=ch), value, wait=wait,
                           timeout=timeout or self.timeout))
 
@@ -119,19 +166,25 @@ class ATE:
     def safe_get(self, suffix: str, *, ch: Optional[int] = None,
                  as_string: bool = False,
                  timeout: Optional[float] = None) -> Any:
+        """
+        Performs a caget operation with error printing instead of exceptions.
+        """
 
         try:
             return self.get(suffix, ch=ch, as_string=as_string,
                             timeout=timeout)
-        except Exception as e:
+        except (ChannelAccessException, OSError, ValueError) as e:
             print(f"caget ERROR {self.pv(suffix, ch=ch)}: {e}")
             return None
 
     def safe_put(self, suffix: str, value: Any, *, ch: Optional[int] = None,
                  wait: bool = True, timeout: Optional[float] = None) -> bool:
+        """
+        Performs a caput operation with error printing instead of exceptions.
+        """
         try:
             return self.put(suffix, value, ch=ch, wait=wait, timeout=timeout)
-        except Exception as e:
+        except (ChannelAccessException, OSError, ValueError) as e:
             print(f"caput ERROR {self.pv(suffix, ch=ch)} <- {value}: {e}")
             return False
 
@@ -183,7 +236,7 @@ class ATE:
         tol = 0.01
         i = 0
 
-        while (i <= 15):
+        while i <= 15:
             val = dut.psc.get_ignd_val(chan)
             if abs(val - ignd_sp) <= tol:
                 break
@@ -219,20 +272,24 @@ class ATE:
         try:
             return val.decode()[:30] if isinstance(val, (bytes, bytearray)) \
                 else str(val)[:30]
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             return str(val)[:30]
 
     # DCCT rails (ai)
     def read_p15_14(self) -> float | None:
+        """Reads DCCT P15V14"""
         return self.safe_get("DCCT:P15V:14-I")
 
     def read_n15_14(self) -> float | None:
+        """Reads DCCT N15V14"""
         return self.safe_get("DCCT:N15V:14-I")
 
     def read_p15_58(self) -> float | None:
+        """Reads DCCT P15V58."""
         return self.safe_get("DCCT:P15V:58-I")
 
     def read_n15_58(self) -> float | None:
+        """Reads DCCT N15V58."""
         return self.safe_get("DCCT:N15V:58-I")
 
     # ---------------- Channel PVs ----------------
@@ -271,15 +328,18 @@ class ATE:
     # ---------------- Batch helpers ----------------
     def set_all_modes(self, mode: Mode | int,
                       channels: Iterable[int] = (1, 2, 3, 4)) -> list[bool]:
+        """Sets the mode for multiple channels."""
         return [self.set_mode(ch, mode) for ch in channels]
 
     def set_all_vmon_gain(self, gain: float, channels: Iterable[int] =
                           (1, 2, 3, 4)) -> list[bool]:
+        """Sets Vmon gain for multiple channels."""
         return [self.set_vmon_gain(ch, gain) for ch in channels]
 
     def set_all_imon_gain(self, gain: float,
                           channels: Iterable[int] =
                           (1, 2, 3, 4)) -> list[bool]:
+        """Sets Imon gain for multiple channels."""
         return [self.set_imon_gain(ch, gain) for ch in channels]
 
     def clear_all_pc_faults(self, channels: Iterable[int] =

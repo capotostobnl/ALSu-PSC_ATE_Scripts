@@ -1,7 +1,6 @@
 """Smooth Ramp Test Submodule
 
 Modified M. Capotosto 11-9-2025
-Original: T. Caracappa
 """
 
 import os

@@ -1,7 +1,9 @@
-"""Jump Test
+"""
+Jump Test Submodule
 
-Modified M. Capotosto 11-9-2025
-Original: T. Caracappy
+This module implements the Step Response test for Power Supply Controllers.
+It relies on the `PSCModel` registry for unit-specific setpoints and
+tolerances, ensuring a generic execution flow for various magnet types.
 """
 import os
 from time import sleep
@@ -27,8 +29,31 @@ plt.rcParams['axes.formatter.limits'] = [-7, 7]
 
 def jump_test(dut: DUT, ate: ATE, section: list, chan: int,
               ctx: ReportContext):
+    """
+    Executes a Step Response (Jump) test and generates diagnostic plots.
+
+    The test stabilizes the PSC at a baseline current, performs a sudden
+    current step (jump), and captures high-speed waveform data to analyze
+    control loop stability, overshoot, and ground current (IGND) behavior.
+
+    Args:
+        dut: The Device Under Test object containing model specs and
+        PSC interface.
+        ate: The Automated Test Equipment interface for external
+        hardware control.
+        section: The list of ReportLab elements to append results to.
+        chan: The specific PSC channel number being tested.
+        ctx: The reporting context containing styles and theme settings.
+
+    Raises:
+        SystemExit: If the hardware fails to stabilize at the baseline
+        setpoint.
+    """
+
     assert dut.psc is not None
 
+    # --- HARDWARE INITIALIZATION ---
+    # Configure ground current monitoring and snapshot window
     jump_params = dut.model.jump
     start_sp = getattr(jump_params.start_setpoints, f"ch{chan}")
     step_size = getattr(jump_params.step_size, f"ch{chan}")
@@ -40,7 +65,8 @@ def jump_test(dut: DUT, ate: ATE, section: list, chan: int,
     ate.set_ignd_channel(chan)
     sleep(0.5)
     ate.set_ignd_value(ignd_setpoint, chan, dut)
-    print(f"Set CH{chan} ignd to {ignd_setpoint}, waiting 5 seconds settling time...")
+    print(f"Set CH{chan} ignd to {ignd_setpoint}, waiting 5 seconds settling"
+          " time...")
     sleep(5)
 
     wfm_pvs = dut.psc.WfmPV
@@ -49,6 +75,8 @@ def jump_test(dut: DUT, ate: ATE, section: list, chan: int,
     dut.psc.set_op_mode(chan, 3)  # Set Mode to Jump
     dut.psc.flush_io()
 
+    # --- BASELINE STABILIZATION ---
+    # Ensure the PSC is at the starting current before the jump
     dut.psc.set_dac_setpt(chan, start_sp)
     print(f"DAC SP: {start_sp} \nDAC RB: {dut.psc.get_dac(chan)}(ramping)")
     dut.psc.flush_io()
@@ -65,6 +93,8 @@ def jump_test(dut: DUT, ate: ATE, section: list, chan: int,
                   f"DAC SP: {start_sp}A, DAC RB: {dut.psc.get_dac(chan)}")
             raise SystemExit
 
+    # --- TRANSIENT CAPTURE ---
+    # Perform the jump and trigger high-speed snapshot
     print(f"Jumping to: {target_sp}A (Step: {step_size}A)")
     dut.psc.set_dac_setpt(chan, target_sp)
     dut.psc.flush_io()
@@ -78,6 +108,11 @@ def jump_test(dut: DUT, ate: ATE, section: list, chan: int,
         print("Waiting for Jump Snapshot data.....")
     sleep(4)
 
+    # --- PLOTTING & REPORTING ---
+    # Generate split-view plots and append to PDF
+
+    # --- DATA ANALYSIS & INDEXING ---
+    # Detect jump location and define crop windows
     dac_wfm = np.asarray(dut.psc.get_wfm(chan, wfm_pvs.DAC))
     dcct1 = np.asarray(dut.psc.get_wfm(chan, wfm_pvs.DCCT1))
     dcct2 = np.asarray(dut.psc.get_wfm(chan, wfm_pvs.DCCT2))
@@ -134,11 +169,12 @@ def jump_test(dut: DUT, ate: ATE, section: list, chan: int,
             res = "PASS" if is_pass else "FAIL"
 
             box_text = f"Test: |Avg-0.1|<{tolerance*1000:.0f}mA? : {res}"
-            ax_full.text(0.5, 0.07, box_text, transform=ax_full.transAxes, 
+            ax_full.text(0.5, 0.07, box_text, transform=ax_full.transAxes,
                          ha="center", bbox=theme)
 
         plt.tight_layout()
-        save_path = os.path.join(dut.raw_data_dir, f"Chan{chan}_{label}_Jump.png")
+        save_path = os.path.join(dut.raw_data_dir, f"Chan{chan}_"
+                                 f"{label}_Jump.png")
         fig.savefig(save_path)
         plt.close(fig)
         plt.pause(0.1)
@@ -164,7 +200,8 @@ def jump_test(dut: DUT, ate: ATE, section: list, chan: int,
 
     # REPLACE all manual Image/Spacer lines with this loop:
     for i, (_, _, _, _, label) in enumerate(waveform_configs):
-        img_path = os.path.join(dut.raw_data_dir, f"Chan{chan}_{label}_Jump.png")
+        img_path = os.path.join(dut.raw_data_dir, f"Chan{chan}_"
+                                f"{label}_Jump.png")
 
         if os.path.exists(img_path):
             section.append(Image(img_path, 7 * inch, 3 * inch))
