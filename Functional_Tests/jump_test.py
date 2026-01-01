@@ -16,7 +16,7 @@ from reportlab.lib.enums import TA_CENTER
 
 from report_generator import ReportContext
 from initialize_dut import DUT
-from ate_epics import ATE
+from EPICS_Adapters.ate_epics import ATE
 
 #######################################################################
 # ******Disable Scientific Notation Conversions on X/Y Axis Plots******
@@ -29,331 +29,123 @@ def jump_test(dut: DUT, ate: ATE, section: list, chan: int,
               ctx: ReportContext):
     assert dut.psc is not None
 
-    IgndSP = 0.1
+    jump_params = dut.model.jump
+    start_sp = getattr(jump_params.start_setpoints, f"ch{chan}")
+    step_size = getattr(jump_params.step_size, f"ch{chan}")
+    target_sp = start_sp + step_size
+    window = jump_params.sample_window
+    tolerance = jump_params.tolerance
+
+    ignd_setpoint = 0.1
     ate.set_ignd_channel(chan)
     sleep(0.5)
-    ate.set_ignd_value(IgndSP, chan, dut)
-    print(f"Set CH{chan} ignd to {IgndSP}, waiting 5 seconds settling time...")
+    ate.set_ignd_value(ignd_setpoint, chan, dut)
+    print(f"Set CH{chan} ignd to {ignd_setpoint}, waiting 5 seconds settling time...")
     sleep(5)
 
-    WfmPV = dut.psc.WfmPV
+    wfm_pvs = dut.psc.WfmPV
     dut.psc.set_wfm_xmin(chan, 0)
     dut.psc.set_wfm_xmax(chan, 100000)
     dut.psc.set_op_mode(chan, 3)  # Set Mode to Jump
     dut.psc.flush_io()
 
-
-    if dut.is_abend == True:
-        if chan == 1:
-            SP = 200.5
-        else:
-            SP=100.5
-
-    elif dut.num_channels == 2:
-        if chan == 1:
-            SP = 30.05
-        else:
-            SP = 50.05
-    
-    elif dut.is_SD_SF == True:
-        if (chan == 1 or chan == 3):
-            SP = 30.05 # 50mA jump 
-        
-        elif (chan == 2 or chan == 4):
-            SP =  65.1# 100mA Jump
-
-    else:
-        SP = 10.05
-
-    dut.psc.set_dac_setpt(chan, SP)
-    print(f"DAC SP: {SP} \nDAC RB: {dut.psc.get_dac(chan)}(ramping)")
+    dut.psc.set_dac_setpt(chan, start_sp)
+    print(f"DAC SP: {start_sp} \nDAC RB: {dut.psc.get_dac(chan)}(ramping)")
     dut.psc.flush_io()
 
-    SP = int(SP)
-    while int(dut.psc.get_dac(chan)) not in range(SP-1, SP+1):
+    timeout = 0
+    while int(dut.psc.get_dac(chan)) not in \
+            range(int(start_sp)-1, int(start_sp)+1):
         print("Waiting for DAC SP to stabilize")
-        dut.psc.set_dac_setpt(chan, SP)
-    print(f"DAC SP: {SP} \nDAC RB: {dut.psc.get_dac(chan)}(ramping)")
+        dut.psc.set_dac_setpt(chan, start_sp)
+        timeout = timeout + 1
+        sleep(1)
+        if timeout == 30:
+            print("Unable to reach Start SP in 30 seconds..."
+                  f"DAC SP: {start_sp}A, DAC RB: {dut.psc.get_dac(chan)}")
+            raise SystemExit
+
+    print(f"Jumping to: {target_sp}A (Step: {step_size}A)")
+    dut.psc.set_dac_setpt(chan, target_sp)
+    dut.psc.flush_io()
     sleep(0.1)
+    print(f"DAC SP: {start_sp} \nDAC RB: {dut.psc.get_dac(chan)}(ramping)")
+
     dut.psc.user_shot(chan)
     sleep(2)
     while dut.psc.is_user_trig_active(chan) > 0:
         sleep(1)
         print("Waiting for Jump Snapshot data.....")
     sleep(4)
-    print(f"DAC SP: {SP} \nDAC RB: {dut.psc.get_dac(chan)}(ramping)")
-    DAC = dut.psc.get_wfm(chan, WfmPV.DAC)
-    D1 = dut.psc.get_wfm(chan, WfmPV.DCCT1)
-    D2 = dut.psc.get_wfm(chan, WfmPV.DCCT2)
-    ERR = dut.psc.get_wfm(chan, WfmPV.ERR)
-    REG = dut.psc.get_wfm(chan, WfmPV.REG)
-    VOLT = dut.psc.get_wfm(chan, WfmPV.VOLT)
-    GND = dut.psc.get_wfm(chan, WfmPV.GND)
-    SPR = dut.psc.get_wfm(chan, WfmPV.SPARE)
 
-    # ----------------------------------------------------------
-    # Find Tindex based on DAC jump (largest absolute derivative)
-    # ----------------------------------------------------------
-    a = np.asarray(DAC)
-    d = np.diff(a)
-    Tindex = int(np.argmax(np.abs(d)))     # <-- the correct jump location
+    dac_wfm = np.asarray(dut.psc.get_wfm(chan, wfm_pvs.DAC))
+    dcct1 = np.asarray(dut.psc.get_wfm(chan, wfm_pvs.DCCT1))
+    dcct2 = np.asarray(dut.psc.get_wfm(chan, wfm_pvs.DCCT2))
+    error = np.asarray(dut.psc.get_wfm(chan, wfm_pvs.ERR))
+    reg_wfm = np.asarray(dut.psc.get_wfm(chan, wfm_pvs.REG))
+    volt = np.asarray(dut.psc.get_wfm(chan, wfm_pvs.VOLT))
+    gnd_wfm = np.asarray(dut.psc.get_wfm(chan, wfm_pvs.GND))
+    spare = np.asarray(dut.psc.get_wfm(chan, wfm_pvs.SPARE))
 
-    # ----------------------------------------------------------
-    # HARD-CODED original window: Tindex ± 500
-    # ----------------------------------------------------------
-    start = max(0, Tindex - 500)
-    end = min(len(a), Tindex + 500)
+    # Find the jump location (where the change is greatest)
+    jump_index = int(np.argmax(np.abs(np.diff(dac_wfm))))
 
-    DACTRAN = a[start:end]
-    ERRTRAN = np.asarray(ERR)[start:end]
-    D1TRAN = np.asarray(D1)[start:end]
-    D2TRAN = np.asarray(D2)[start:end]
-    REGTRAN = np.asarray(REG)[start:end]
-    VTRAN = np.asarray(VOLT)[start:end]
-    GTRAN = np.asarray(GND)[start:end]
-    STRAN = np.asarray(SPR)[start:end]
+    # Define the fixed +/- 500 sample transition window
+    idx_start = max(0, jump_index - window)
+    idx_end = min(len(dac_wfm), jump_index + window)
+
+    waveform_configs = [
+        (dac_wfm, "Current (A)", "DAC Loopback", "DAC Transition", "DAC"),
+        (dcct1,   "Current (A)", "DCCT 1",       "DCCT1 Transition", "DCCT1"),
+        (dcct2,   "Current (A)", "DCCT 2",       "DCCT2 Transition", "DCCT2"),
+        (error,   "Current (A)", "ERROR",        "Error Transition", "ERROR"),
+        (reg_wfm, "Current (A)", "REG",          "REG Transition",   "REG"),
+        (volt,    "Voltage (V)", "PS VOLT",      "VOLT Transition",  "VOLT"),
+        (gnd_wfm, "Current (A)", "IGND",         "IGND Transition",  "IGND"),
+        (spare,   "Current (A)", "SPARE",        "SPARE Transition", "SPARE")
+    ]
 
     plt.ion()
-    f = plt.figure(figsize=(8, 4))
-    gs = GridSpec(1, 3, figure=f)
-    ax1 = f.add_subplot(gs[0, 0:2])
-    ax2 = f.add_subplot(gs[0, 2])
+    for data, y_lab, f_title, z_title, label in waveform_configs:
+        fig = plt.figure(figsize=(8, 4))
+        gs = GridSpec(1, 3, figure=fig)
 
-    ax1.plot(DAC)
-    ax1.grid(True)
-    ax1.set_xlabel("10KHz Samples")
-    ax1.set_ylabel("Current (A)")
-    ax1.set_title("DAC Loopback Jump Test")
+        # Left side: Full waveform overview (2/3 of the width)
+        ax_full = fig.add_subplot(gs[0, 0:2])
+        ax_full.plot(data)
+        ax_full.set_title(f"Ch{chan} {f_title} Jump Test")
+        ax_full.set_ylabel(y_lab)
+        ax_full.set_xlabel("10KHz Samples")
+        ax_full.grid(True)
 
-    ax2.plot(DACTRAN)
-    ax2.grid(True)
-    ax2.set_xlabel("10KHz Samples")
-    ax2.set_ylabel("Current (A)")
-    ax2.set_title("DAC Transition")
-    plt.tight_layout()
-    plt.pause(0.1)
+        # Right side: Zoomed transition (1/3 of the width)
+        ax_zoom = fig.add_subplot(gs[0, 2])
+        ax_zoom.plot(data[idx_start:idx_end])
+        ax_zoom.set_title(z_title)
+        ax_zoom.set_xlabel("Samples")
+        ax_zoom.grid(True)
 
-    save_path = os.path.join(dut.raw_data_dir, f"Chan{chan}"
-                             "_DAC_Jump.png")
-    f.savefig(save_path)
-    plt.close(f)
-    plt.pause(0.1)
+        # Integrated IGND Pass/Fail Logic (Only for the IGND plot)
+        if label == "IGND":
+            avg = float(np.mean(data))
+            diff = abs(ignd_setpoint - avg)
+            is_pass = diff < tolerance
+            theme = ctx.theme.good if is_pass else ctx.theme.bad
+            res = "PASS" if is_pass else "FAIL"
 
-    f = plt.figure(figsize=(8, 4))
-    gs = GridSpec(1, 3, figure=f)
-    ax1 = f.add_subplot(gs[0, 0:2])
-    ax2 = f.add_subplot(gs[0, 2])
+            box_text = f"Test: |Avg-0.1|<{tolerance*1000:.0f}mA? : {res}"
+            ax_full.text(0.5, 0.07, box_text, transform=ax_full.transAxes, 
+                         ha="center", bbox=theme)
 
-    ax1.plot(ERR)
-    ax1.grid(True)
-    ax1.set_xlabel("10KHz Samples")
-    ax1.set_ylabel("Current (A)")
-    ax1.set_title("ERROR Jump Test")
+        plt.tight_layout()
+        save_path = os.path.join(dut.raw_data_dir, f"Chan{chan}_{label}_Jump.png")
+        fig.savefig(save_path)
+        plt.close(fig)
+        plt.pause(0.1)
 
-    ax2.plot(ERRTRAN)
-    ax2.grid(True)
-    ax2.set_xlabel("10KHz Samples")
-    ax2.set_ylabel("Current (A)")
-    ax2.set_title("Error Transition")
-    plt.tight_layout()
-    plt.pause(0.1)
-    save_path = os.path.join(dut.raw_data_dir,
-                             f"Chan{chan}_ERROR_Jump.png")
-    f.savefig(save_path)
-    plt.close(f)
-    plt.pause(0.1)
-
-    f = plt.figure(figsize=(8, 4))
-    gs = GridSpec(1, 3, figure=f)
-    ax1 = f.add_subplot(gs[0, 0:2])
-    ax2 = f.add_subplot(gs[0, 2])
-
-    ax1.plot(D1)
-    ax1.grid(True)
-    ax1.set_xlabel("10KHz Samples")
-    ax1.set_ylabel("Current (A)")
-    ax1.set_title("DCCT1 Jump")
-
-    ax2.plot(D1TRAN)
-    ax2.grid(True)
-    ax2.set_xlabel("10KHz Samples")
-    ax2.set_ylabel("Current (A)")
-    ax2.set_title("DCCT1 Transition")
-    plt.tight_layout()
-    plt.pause(0.1)
-    save_path = os.path.join(dut.raw_data_dir,
-                             f"Chan{chan}_DCCT1_Jump.png")
-    f.savefig(save_path)
-    plt.close(f)
-    plt.pause(0.1)
-
-    f = plt.figure(figsize=(8, 4))
-    gs = GridSpec(1, 3, figure=f)
-    ax1 = f.add_subplot(gs[0, 0:2])
-    ax2 = f.add_subplot(gs[0, 2])
-
-    ax1.plot(D2)
-    ax1.grid(True)
-    ax1.set_xlabel("10KHz Samples")
-    ax1.set_ylabel("Current (A)")
-    ax1.set_title("DCCT2 Jump Test")
-
-    ax2.plot(D2TRAN)
-    ax2.grid(True)
-    ax2.set_xlabel("10KHz Samples")
-    ax2.set_ylabel("Current (A)")
-    ax2.set_title("DCCT2 Transition")
-    plt.tight_layout()
-    plt.pause(0.1)
-    save_path = os.path.join(dut.raw_data_dir,
-                             f"Chan{chan}_DCCT2_Jump.png")
-    f.savefig(save_path)
-    plt.close(f)
-    plt.pause(0.1)
-
-    f = plt.figure(figsize=(8, 4))
-    gs = GridSpec(1, 3, figure=f)
-    ax1 = f.add_subplot(gs[0, 0:2])
-    ax2 = f.add_subplot(gs[0, 2])
-
-    ax1.plot(REG)
-    ax1.grid(True)
-    ax1.set_xlabel("10KHz Samples")
-    ax1.set_ylabel("Current (A)")
-    ax1.set_title("Regulator Jump Test")
-
-    ax2.plot(REGTRAN)
-    ax2.grid(True)
-    ax2.set_xlabel("10KHz Samples")
-    ax2.set_ylabel("Current (A)")
-    ax2.set_title("REG Transition")
-    plt.tight_layout()
-    plt.pause(0.1)
-    save_path = os.path.join(dut.raw_data_dir,
-                             f"Chan{chan}_REG_Jump.png")
-    f.savefig(save_path)
-    plt.close(f)
-    plt.pause(0.1)
-
-    f = plt.figure(figsize=(8, 4))
-    gs = GridSpec(1, 3, figure=f)
-    ax1 = f.add_subplot(gs[0, 0:2])
-    ax2 = f.add_subplot(gs[0, 2])
-
-    ax1.plot(VOLT)
-    ax1.grid(True)
-    ax1.set_xlabel("10KHz Samples")
-    ax1.set_ylabel("Voltage (V)")
-    ax1.set_title("PS VOLT Jump Test")
-
-    ax2.plot(VTRAN)
-    ax2.grid(True)
-    ax2.set_xlabel("10KHz Samples")
-    ax2.set_ylabel("Voltage (V)")
-    ax2.set_title("VOLT Transition")
-    plt.tight_layout()
-    plt.pause(0.1)
-    save_path = os.path.join(dut.raw_data_dir,
-                             f"Chan{chan}_VOLT_Jump.png")
-    f.savefig(save_path)
-    plt.close(f)
-    plt.pause(0.1)
-
-    f = plt.figure(figsize=(8, 4))
-    gs = GridSpec(1, 3, figure=f)
-    ax1 = f.add_subplot(gs[0, 0:2])
-    ax2 = f.add_subplot(gs[0, 2])
-
-    IgndAvg = float(np.mean(GND))
-    print("####################IgndAvg=", IgndAvg, IgndSP)
-    Diff = abs(IgndSP - IgndAvg)
-    ax1.plot(GND)
-    ax1.grid(True)
-    ax1.set_xlabel("10KHz Samples")
-    ax1.set_ylabel("Current (A)")
-    ax1.set_title("IGND Jump Test")
-    mstr = "Ignd SP: " + str(round(IgndSP, 3)) + "A"
-    ax1.text(
-        0.02,
-        0.97,
-        mstr,
-        transform=ax1.transAxes,
-        fontsize=10,
-        verticalalignment="top",
-        bbox=ctx.theme.props,
-    )
-    mstr = "Ignd Wfm Avg: " + str(round(IgndAvg, 3)) + "A"
-    ax1.text(
-        0.6,
-        0.97,
-        mstr,
-        transform=ax1.transAxes,
-        fontsize=10,
-        verticalalignment="top",
-        bbox=ctx.theme.props,
-    )
-    if Diff > 0.05:
-        mstr = "Test: |IgndSP-IgndAvg|<50mA? : FAIL"
-        ax1.text(
-            0.3,
-            0.07,
-            mstr,
-            transform=ax1.transAxes,
-            fontsize=10,
-            verticalalignment="top",
-            bbox=ctx.theme.bad,
-        )
-    else:
-        mstr = "Test: |IgndSP-IgndAvg|<50mA? : PASS"
-        ax1.text(
-            0.3,
-            0.07,
-            mstr,
-            transform=ax1.transAxes,
-            fontsize=10,
-            verticalalignment="top",
-            bbox=ctx.theme.good,
-        )
-
-    ax2.plot(GTRAN)
-    ax2.grid(True)
-    ax2.set_xlabel("10KHz Samples")
-    ax2.set_ylabel("Current (A)")
-    ax2.set_title("IGND Transition")
-    plt.tight_layout()
-    plt.pause(0.1)
-    save_path = os.path.join(dut.raw_data_dir,
-                             f"Chan{chan}_IGND_Jump.png")
-    f.savefig(save_path)
-    plt.close(f)
-    plt.pause(0.1)
-
-    f = plt.figure(figsize=(8, 4))
-    gs = GridSpec(1, 3, figure=f)
-    ax1 = f.add_subplot(gs[0, 0:2])
-    ax2 = f.add_subplot(gs[0, 2])
-
-    ax1.plot(SPR)
-    ax1.grid(True)
-    ax1.set_xlabel("10KHz Samples")
-    ax1.set_ylabel("Current (A)")
-    ax1.set_title("SPARE Jump Test")
-
-    ax2.plot(STRAN)
-    ax2.grid(True)
-    ax2.set_xlabel("10KHz Samples")
-    ax2.set_ylabel("Current (A)")
-    ax2.set_title("SPARE Transition")
-    plt.tight_layout()
-    plt.pause(0.1)
-    save_path = os.path.join(dut.raw_data_dir,
-                             f"Chan{chan}_SPARE_Jump.png")
-    f.savefig(save_path)
-    plt.close(f)
-    plt.pause(0.1)
     base_style = ctx.styles["Normal"]
     mstr = "Jump Test Results:"
-    Pstyle = ParagraphStyle(
+    paragraph_style = ParagraphStyle(
         "Custom",
         parent=base_style,
         fontName="Helvetica",
@@ -362,43 +154,28 @@ def jump_test(dut: DUT, ate: ATE, section: list, chan: int,
         alignment=TA_CENTER,
     )
 
-    title = Paragraph(mstr, Pstyle)
-    section.append(PageBreak())
-    section.append(title)
-    im = Image(os.path.join(dut.raw_data_dir,
-               f"Chan{chan}_DAC_Jump.png"), 7 * inch, 3 * inch)
-    section.append(im)
-    section.append(Spacer(width=1, height=0.1 * inch))
-    im = Image(os.path.join(dut.raw_data_dir,
-               f"Chan{chan}_DCCT1_Jump.png"), 7 * inch, 3 * inch)
-    section.append(im)
-    section.append(Spacer(width=1, height=0.1 * inch))
-    im = Image(os.path.join(dut.raw_data_dir,
-               f"Chan{chan}_DCCT2_Jump.png"), 7 * inch, 3 * inch)
-    section.append(im)
-    section.append(Spacer(width=1, height=0.1 * inch))
+    mstr = f"Jump Test Results: {dut.model.display_name} CH{chan}"
+    title_para = Paragraph(mstr, paragraph_style)
 
+    # Start the reporting
     section.append(PageBreak())
-    section.append(title)
-    im = Image(os.path.join(dut.raw_data_dir,
-               f"Chan{chan}_ERROR_Jump.png"), 7 * inch, 3 * inch)
-    section.append(im)
-    section.append(Spacer(width=1, height=0.1 * inch))
-    im = Image(os.path.join(dut.raw_data_dir,
-               f"Chan{chan}_REG_Jump.png"), 7 * inch, 3 * inch)
-    section.append(im)
-    section.append(Spacer(width=1, height=0.1 * inch))
-    im = Image(os.path.join(dut.raw_data_dir,
-               f"Chan{chan}_VOLT_Jump.png"), 7 * inch, 3 * inch)
-    section.append(im)
-    section.append(Spacer(width=1, height=0.1 * inch))
+    section.append(title_para)
+    section.append(Spacer(1, 0.2 * inch))
 
-    section.append(PageBreak())
-    section.append(title)
-    im = Image(os.path.join(dut.raw_data_dir,
-               f"Chan{chan}_IGND_Jump.png"), 7 * inch, 3 * inch)
-    section.append(im)
-    section.append(Spacer(width=1, height=0.1 * inch))
-    im = Image(os.path.join(dut.raw_data_dir,
-               f"Chan{chan}_SPARE_Jump.png"), 7 * inch, 3 * inch)
-    section.append(im)
+    # REPLACE all manual Image/Spacer lines with this loop:
+    for i, (_, _, _, _, label) in enumerate(waveform_configs):
+        img_path = os.path.join(dut.raw_data_dir, f"Chan{chan}_{label}_Jump.png")
+
+        if os.path.exists(img_path):
+            section.append(Image(img_path, 7 * inch, 3 * inch))
+            section.append(Spacer(1, 0.1 * inch))
+
+            # Logic to keep the report tidy (3 plots per page)
+            if (i + 1) % 3 == 0 and (i + 1) < len(waveform_configs):
+                section.append(PageBreak())
+                section.append(title_para)
+                section.append(Spacer(1, 0.2 * inch))
+
+    print(f"Jump Test for CH{chan} complete. Returning to 0A.")
+    dut.psc.set_dac_setpt(chan, 0)
+    dut.psc.flush_io()

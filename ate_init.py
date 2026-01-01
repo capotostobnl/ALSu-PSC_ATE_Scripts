@@ -4,7 +4,7 @@ Original: T. Caracappy
 """
 
 from time import sleep
-from ate_epics import ATE
+from EPICS_Adapters.ate_epics import ATE
 from initialize_dut import DUT
 
 

@@ -16,7 +16,7 @@ from reportlab.lib.enums import TA_CENTER
 
 from report_generator import ReportContext
 from initialize_dut import DUT
-from ate_epics import ATE
+from EPICS_Adapters.ate_epics import ATE
 
 #######################################################################
 # ******Disable Scientific Notation Conversions on X/Y Axis Plots******
@@ -24,281 +24,161 @@ plt.rcParams['axes.formatter.useoffset'] = False
 plt.rcParams['axes.formatter.limits'] = [-7, 7]
 ########################################################################
 
+
 def smooth_ramp_test(dut: DUT, ate: ATE, section: list,
                      chan: int, ctx: ReportContext):
+    """
+    Executes a high-speed waveform capture and analysis during a smooth
+    current ramp.
+
+    The function performs the following sequence:
+    1.  **Hardware Prep**: Configures the grounding relay (IGND) via the ATE,
+        clears active faults, and sets the PSC to 'Smooth' operation mode.
+    2.  **Initial Move**: Ramps the channel to the 'start_setpoint' and waits
+        for the model-defined settling time to ensure a stable baseline.
+    3.  **Dynamic Ramp**: Executes a ramp to the 'end_setpoint' at the
+        per-channel slew rate specified in the model configuration.
+    4.  **Snapshot Capture**: Triggers a 10kHz hardware snapshot (User Shot)
+        during the ramp and polls the trigger status until the data transfer
+        is complete.
+    5.  **Waveform Analysis**: Retrieves 8 distinct signal waveforms (DAC,
+        DCCTs, Error, Voltage, etc.) and performs a statistical Pass/Fail
+        analysis on the Ground Current (IGND) stability.
+    6.  **Reporting**: Generates multi-page PDF output by looping through
+        captured waveforms, organizing them into a professional layout
+        (3 plots per page).
+
+    Args:
+        dut (DUT): The Device Under Test object containing the PSC adapter
+            and the model-specific ramp parameters (SmoothRampTestParams).
+        ate (ATE): The Automated Test Equipment adapter for controlling
+            external grounding hardware.
+        section (list): A list of ReportLab Flowables to which the title,
+            plots, and spacers will be appended.
+        chan (int): The 1-indexed channel number (1-4) to be tested.
+        ctx (ReportContext): The reporting utility used for consistent
+            styling, color themes, and directory path management.
+
+    Returns:
+        None: All data is saved to disk as PNG files and appended
+            directly to the 'section' report list.
+
+    Raises:
+        AssertionError: If the PSC adapter is not properly initialized.
+        AttributeError: If the requested channel is missing from the
+            model's start, end, or rate configurations.
+    """
     assert dut.psc is not None
 
-    IgndSP = 0.1
+    ignd_sp = 0.1
     ate.set_ignd_channel(chan)
     sleep(0.5)
-    ate.set_ignd_value(IgndSP, chan, dut)
+    ate.set_ignd_value(ignd_sp, chan, dut)
     sleep(3)
 
-    WfmPV = dut.psc.WfmPV
+    wfm_pvs = dut.psc.wfm_pvs
     dut.psc.set_op_mode(chan, 0)  # Set PS Mode to SMOOTH
     sleep(1)
-    dut.psc.set_rate(chan, 10)  # Set Ramp Rate to 10 Amps/Sec
-    sleep(1)
 
-    if dut.is_abend == True:
-        if chan == 1:
-            dut.psc.set_rate(chan, 60)  # Set Ramp Rate to 20 Amps/Sec
-            dut.psc.set_dac_setpt(chan, 0)  
-            sleep(10)
-            dut.psc.set_dac_setpt(chan, 385)  
-        else:
-            dut.psc.set_rate(chan, 30)  # Set Ramp Rate to 20 Amps/Sec
-            dut.psc.set_dac_setpt(chan, 0) 
-            sleep(10)
-            dut.psc.set_dac_setpt(chan, 185) 
-    
-    elif (dut.num_channels == 2 and not dut.is_abend):
-        if chan == 1:
-            dut.psc.set_dac_setpt(chan, 0)  # Set DAC to 0 Amps
-            sleep(10)
-            dut.psc.set_dac_setpt(chan, 49.9)  # Set DAC SP to +49.9 Amps
-        else:
-            dut.psc.set_rate(chan, 20)  # Set Ramp Rate to 20 Amps/Sec
-            dut.psc.set_dac_setpt(chan, 0)  # Set DAC to 0 Amps
-            sleep(10)
-            dut.psc.set_dac_setpt(chan, 99.9)  # Set DAC SP to +99.9 Amps
+    ramp_params = dut.model.smooth
+    start_sp = getattr(ramp_params.start_setpoints, f"ch{chan}")
+    end_sp = getattr(ramp_params.end_setpoints, f"ch{chan}")
+    ramp_rate = getattr(ramp_params.ramp_rate, f"ch{chan}")
+    tolerance = ramp_params.tolerance
+    settling_time = ramp_params.settling_time
 
-    elif (dut.num_channels ==4 and dut.is_SD_SF):
-        if (chan == 1 or chan == 3):
-            dut.psc.set_rate(chan, 10)  # Set Ramp Rate
-            dut.psc.set_dac_setpt(chan, 0)  # Set DAC to 0 Amps
-            sleep(10)
-            dut.psc.set_dac_setpt(chan, 59)
-        if (chan == 2 or chan == 4):
-            dut.psc.set_rate(chan, 20)  # Set Ramp Rate
-            dut.psc.set_dac_setpt(chan, 0)  # Set DAC to 0 Amps
-            sleep(10)
-            dut.psc.set_dac_setpt(chan, 124)
+    dut.psc.set_rate(chan, ramp_rate)
+    print(f"Moving to Start: {start_sp}A")
+    dut.psc.set_dac_setpt(chan, start_sp)
+    sleep(settling_time)  # Allow initial move to settle
+    print(f"Ramping: {start_sp}A -> {end_sp}A @ {ramp_rate}A/s")
+    dut.psc.set_dac_setpt(chan, end_sp)
 
-    elif (dut.num_channels ==4 and not dut.is_SD_SF):
-        dut.psc.set_dac_setpt(chan, -23.9)  # Set DAC to -23.9 Amps
-        sleep(10)  # Wait 10 Seconds for Ramp to Complete
-        print(f"DAC SP: -23.9 \nDAC RB: {dut.psc.get_dac(chan)}")
-        dut.psc.set_dac_setpt(chan, 23.9)  # Set DAC SP to +23.9 Amps
     sleep(2)  # Wait 2 Seconds before taking Snapshot
-    print(f"DAC SP: +23.9 \nDAC RB: {dut.psc.get_dac(chan)}(Ramping!)")
+    print(f"DAC SP: {end_sp}\nDAC RB: {dut.psc.get_dac(chan)}(Ramping!)")
     dut.psc.user_shot(chan)  # Take the Snapshot.
     sleep(2)
     while dut.psc.is_user_trig_active(chan) > 0:
         sleep(1)
         print("Wating for Smooth Snapshot data.....")
     sleep(6)
-    print(f"DAC SP: +23.9 \nDAC RB: {dut.psc.get_dac(chan)}")
+    print(f"DAC SP: {end_sp} \nDAC RB: {dut.psc.get_dac(chan)}")
 
-    DAC = dut.psc.get_wfm(chan, WfmPV.DAC)
-    D1 = dut.psc.get_wfm(chan, WfmPV.DCCT1)
-    D2 = dut.psc.get_wfm(chan, WfmPV.DCCT2)
-    ERR = dut.psc.get_wfm(chan, WfmPV.ERR)
-    REG = dut.psc.get_wfm(chan, WfmPV.REG)
-    VOLT = dut.psc.get_wfm(chan, WfmPV.VOLT)
-    GND = dut.psc.get_wfm(chan, WfmPV.GND)
-    SPR = dut.psc.get_wfm(chan, WfmPV.SPARE)
+    # Waveform configuration list
+    waveform_configs = [
+        # pylint: disable=line-too-long
+        # DATA                               Y_LABEL        TITLE           LABEL        # noqa: E501
+        (dut.psc.get_wfm(chan, wfm_pvs.DAC),   "Current (A)", "DAC Loopback", "DAC"),    # noqa: E501
+        (dut.psc.get_wfm(chan, wfm_pvs.DCCT1), "Current (A)", "DCCT 1",       "DCCT1"),  # noqa: E501
+        (dut.psc.get_wfm(chan, wfm_pvs.DCCT2), "Current (A)", "DCCT 2",       "DCCT2"),  # noqa: E501
+        (dut.psc.get_wfm(chan, wfm_pvs.ERR),   "Current (A)", "ERROR",        "ERROR"),  # noqa: E501
+        (dut.psc.get_wfm(chan, wfm_pvs.REG),   "Current (A)", "REG",          "REG"),    # noqa: E501
+        (dut.psc.get_wfm(chan, wfm_pvs.VOLT),  "Voltage (V)", "PS Voltage",   "VOLT"),   # noqa: E501
+        (dut.psc.get_wfm(chan, wfm_pvs.GND),   "Current (A)", "Ground",       "IGND"),   # noqa: E501
+        (dut.psc.get_wfm(chan, wfm_pvs.SPARE), "Current (A)", "SPARE",        "SPARE")   # noqa: E501
+        # pylint: enable=line-too-long
+    ]
 
     plt.ion()
-    f, ax = plt.subplots(figsize=(8, 4))
-    ax.plot(DAC)  # type: ignore
-    ax.grid(True)
-    ax.set_xlabel("10KHz Samples")
-    ax.set_ylabel("Current (A)")
-    ax.set_title("DAC Loopback Smooth Test")
-    plt.pause(0.1)
-    save_path = os.path.join(dut.raw_data_dir,
-                             f"Chan{chan}_DAC_Smooth.png")
-    f.savefig(save_path)
-    plt.close(f)
-    plt.pause(0.1)
 
-    f, ax = plt.subplots(figsize=(8, 4))
-    ax.plot(D1)  # type: ignore
-    ax.grid(True)
-    ax.set_xlabel("10KHz Samples")
-    ax.set_ylabel("Current (A)")
-    ax.set_title("DCCT1 Smooth Test")
-    plt.pause(0.1)
-    save_path = os.path.join(dut.raw_data_dir,
-                             f"Chan{chan}_DCCT1_Smooth.png")
-    f.savefig(save_path)
-    plt.close(f)
-    plt.pause(0.1)
+    for data, y_label, title, label in waveform_configs:
+        fig, axis = plt.subplots(figsize=(8, 4))
+        axis.plot(data)
+        axis.grid(True)
+        axis.set_xlabel("10KHz Samples")
+        axis.set_ylabel(y_label)
+        axis.set_title(f"Ch{chan} {title} Smooth Test")
+        plt.pause(0.1)
 
-    f, ax = plt.subplots(figsize=(8, 4))
-    ax.plot(D2)  # type: ignore
-    ax.grid(True)
-    ax.set_xlabel("10KHz Samples")
-    ax.set_ylabel("Current (A)")
-    ax.set_title("DCCT2 Smooth Test")
-    plt.pause(0.1)
-    save_path = os.path.join(dut.raw_data_dir,
-                             f"Chan{chan}_DCCT2_Smooth.png")
-    f.savefig(save_path)
-    plt.close(f)
-    plt.pause(0.1)
+        if label == "IGND":  # Add pass/fail test
+            ignd_avg = float(np.mean(data))
+            diff = abs(ignd_sp - ignd_avg)
 
-    f, ax = plt.subplots(figsize=(8, 4))
-    ax.plot(ERR)  # type: ignore
-    ax.grid(True)
-    ax.set_xlabel("10KHz Samples")
-    ax.set_ylabel("Current (A)")
-    ax.set_title("ERROR Smooth Test")
-    plt.pause(0.1)
-    save_path = os.path.join(dut.raw_data_dir,
-                             f"Chan{chan}_ERROR_Smooth.png")
-    f.savefig(save_path)
-    plt.close(f)
-    plt.pause(0.1)
+            is_pass = diff < tolerance
+            status = "PASS" if is_pass else "FAIL"
+            theme = ctx.theme.good if is_pass else ctx.theme.bad
 
-    f, ax = plt.subplots(figsize=(8, 4))
-    ax.plot(REG)  # type: ignore
-    ax.grid(True)
-    ax.set_xlabel("10KHz Samples")
-    ax.set_ylabel("Current (A)")
-    ax.set_title("REG Smooth Test")
-    plt.pause(0.1)
-    save_path = os.path.join(dut.raw_data_dir,
-                             f"Chan{chan}_REG_Smooth.png")
-    f.savefig(save_path)
-    plt.close(f)
-    plt.pause(0.1)
+            # Format the box text using model-specific tolerance
+            test_str = f"Test: |Avg-0.1| < {tolerance*1000:.0f}mA? : {status}"
+            axis.text(0.5, 0.07, test_str, transform=axis.transAxes,
+                      ha="center", bbox=theme)
 
-    f, ax = plt.subplots(figsize=(8, 4))
-    ax.plot(VOLT)  # type: ignore
-    ax.grid(True)
-    ax.set_xlabel("10KHz Samples")
-    ax.set_ylabel("Voltage (V)")
-    ax.set_title("PS VOLT Smooth Test")
-    plt.pause(0.1)
-    save_path = os.path.join(dut.raw_data_dir,
-                             f"Chan{chan}_VOLT_Smooth.png")
-    f.savefig(save_path)
-    plt.close(f)
-    plt.pause(0.1)
-
-    f, ax = plt.subplots(figsize=(8, 4))
-    IgndAvg = float(np.mean(GND))  # type: ignore
-    Diff = abs(IgndSP - IgndAvg)
-    ax.plot(GND)  # type: ignore
-    ax.grid(True)
-    ax.set_xlabel("10KHz Samples")
-    ax.set_ylabel("Current (A)")
-    ax.set_title("IGND Smooth Test")
-    mstr = "Ignd SP: " + str(round(IgndSP, 3)) + "A"
-    ax.text(
-        0.02,
-        0.97,
-        mstr,
-        transform=ax.transAxes,
-        fontsize=10,
-        verticalalignment="top",
-        bbox=ctx.theme.props
-    )
-    mstr = "Ignd Wfm Avg: " + str(round(IgndAvg, 3)) + "A"
-    ax.text(
-        0.6,
-        0.97,
-        mstr,
-        transform=ax.transAxes,
-        fontsize=10,
-        verticalalignment="top",
-        bbox=ctx.theme.props,
-    )
-    if Diff > 0.05:
-        mstr = "Test: |IgndSP-IgndAvg|<50mA? : FAIL"
-        ax.text(
-            0.4,
-            0.07,
-            mstr,
-            transform=ax.transAxes,
-            fontsize=10,
-            verticalalignment="top",
-            bbox=ctx.theme.bad,
-        )
-    else:
-        mstr = "Test: |IgndSP-IgndAvg|<50mA? : PASS"
-        ax.text(
-            0.4,
-            0.07,
-            mstr,
-            transform=ax.transAxes,
-            fontsize=10,
-            verticalalignment="top",
-            bbox=ctx.theme.good,
-        )
-
-    plt.pause(0.1)
-    save_path = os.path.join(dut.raw_data_dir,
-                             f"Chan{chan}_IGND_Smooth.png")
-    f.savefig(save_path)
-    plt.close(f)
-    plt.pause(0.1)
-
-    f, ax = plt.subplots(figsize=(8, 4))
-    ax.plot(SPR)  # type: ignore
-    ax.grid(True)
-    ax.set_xlabel("10KHz Samples")
-    ax.set_ylabel("Current (A)")
-    ax.set_title("SPARE Smooth Test")
-    plt.pause(0.1)
-    save_path = os.path.join(dut.raw_data_dir,
-                             f"Chan{chan}_SPARE_Smooth.png")
-    f.savefig(save_path)
-    plt.close(f)
-    plt.pause(0.1)
+        save_path = os.path.join(dut.raw_data_dir,
+                                 f"Chan{chan}_{label}_Smooth.png")
+        fig.savefig(save_path)
+        plt.close(fig)
+        plt.pause(0.1)
 
     base_style = ctx.styles["Normal"]
     mstr = "Smooth Test Results:"
-    Pstyle = ParagraphStyle(
+    paragraph_style = ParagraphStyle(
         "Custom",
         parent=base_style,
         fontName="Helvetica",
-        fontSize=16,  # 👈 Set font size here
-        leading=20,  # Optional: line spacing
-        alignment=TA_CENTER,  # 👈 Centers the paragraph horizontally
+        fontSize=16,
+        leading=20,
+        alignment=TA_CENTER,
     )
 
-    title = Paragraph(mstr, Pstyle)
+    title = Paragraph(mstr, paragraph_style)
     section.append(PageBreak())
     section.append(title)
-    im = Image(os.path.join(dut.raw_data_dir,
-               f"Chan{chan}_DAC_Smooth.png"), 7 * inch, 3 * inch)
-    section.append(im)
-    section.append(Spacer(width=1, height=0.1 * inch))
-    im = Image(os.path.join(dut.raw_data_dir,
-               f"Chan{chan}_DCCT1_Smooth.png"), 7 * inch, 3 * inch)
-    section.append(im)
-    section.append(Spacer(width=1, height=0.1 * inch))
-    im = Image(os.path.join(dut.raw_data_dir,
-               f"Chan{chan}_DCCT2_Smooth.png"), 7 * inch, 3 * inch)
-    section.append(im)
-    section.append(Spacer(width=1, height=0.1 * inch))
+    section.append(Spacer(1, 0.2 * inch))
 
-    section.append(PageBreak())
-    section.append(title)
-    im = Image(os.path.join(dut.raw_data_dir,
-               f"Chan{chan}_ERROR_Smooth.png"), 7 * inch, 3 * inch)
-    section.append(im)
-    section.append(Spacer(width=1, height=0.1 * inch))
-    im = Image(os.path.join(dut.raw_data_dir,
-               f"Chan{chan}_REG_Smooth.png"), 7 * inch, 3 * inch)
-    section.append(im)
-    section.append(Spacer(width=1, height=0.1 * inch))
-    im = Image(os.path.join(dut.raw_data_dir,
-               f"Chan{chan}_VOLT_Smooth.png"), 7 * inch, 3 * inch)
-    section.append(im)
-    section.append(Spacer(width=1, height=0.1 * inch))
+    # Loop through the labels defined in waveform_configs to add images
+    for i, (_, _, _, label) in enumerate(waveform_configs):
+        img_path = os.path.join(dut.raw_data_dir, f"Chan{chan}_{label}"
+                                "_Smooth.png")
 
-    section.append(PageBreak())
-    section.append(title)
-    im = Image(os.path.join(dut.raw_data_dir,
-               f"Chan{chan}_IGND_Smooth.png"),
-               7 * inch, 3 * inch)  # type: ignore
-    section.append(im)
-    section.append(Spacer(width=1, height=0.1 * inch))
-    im = Image(os.path.join(dut.raw_data_dir,
-               f"Chan{chan}_SPARE_Smooth.png"), 7 * inch, 3 * inch)
-    section.append(im)
+        # Add the image and a small spacer
+        section.append(Image(img_path, 7 * inch, 3 * inch))
+        section.append(Spacer(1, 0.1 * inch))
+
+        # Tidy up the layout: Add a page break and repeat the title after
+        # every 3 images
+        if (i + 1) % 3 == 0 and (i + 1) < len(waveform_configs):
+            section.append(PageBreak())
+            section.append(title)
+            section.append(Spacer(1, 0.2 * inch))
+
     dut.psc.set_dac_setpt(chan, 0)

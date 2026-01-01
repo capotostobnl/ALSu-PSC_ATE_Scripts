@@ -16,7 +16,8 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Tuple
 from time import sleep
-from psc_epics import PSC
+from EPICS_Adapters.psc_epics import PSC
+from psc_models import PSCModel, get_psc_model_from_user
 
 
 @dataclass
@@ -27,6 +28,7 @@ class DUT:
         psc_sn: Zero-padded 4-digit PSC serial number (e.g., '0042').
         pv_prefix: EPICS PV prefix of the PSC (e.g., 'lab{3}').
         psc: EPICS adapter created after pv_prefix is known.
+        model: PSCModel dataclass with parameters/limits for different models
         report_dir: Per-shipment report directory path.
         raw_data_dir: Timestamped raw-data subdirectory path for this run.
         num_channels: Number of PSC channels (queried from EPICS).
@@ -40,10 +42,7 @@ class DUT:
     psc_sn: str = ""
     pv_prefix: str = ""
     psc: PSC | None = None
-
-    # --- SPECIALTY PSCS ---
-    is_abend: bool = False
-    is_SD_SF: bool = False
+    model: PSCModel = field(init=False)
 
     # --- filesystem / run info ---
     report_dir: str = field(init=False, default="")
@@ -75,41 +74,15 @@ class DUT:
 
         # Populate the configuration from the PSC PVs
         self.query_psc_config()
-        if self.num_channels == 2:
-            self.query_2ch_type()
-        else:
-            self.query_4ch_type()
-        
+
+        # Get PSC Model from psc_models.py Function
+        self.model = get_psc_model_from_user(self.num_channels)
 
         # Create directory structure...
         self.report_dir = \
             self.make_report_dir()
         self.raw_data_dir, self.dir_timestamp = \
             self.make_rawdata_subdir()
-
-    def query_2ch_type(self) -> bool:
-        if self.psc is None:
-            raise RuntimeError("PSC adapter not initialized before \n"
-                               "calling query_psc_config()")
-        print("Choose unit type: \n\n 1. AR-R3 ABEND/QFA \n\n 2. AR-R1 Standard\n")
-        unit_type_loc = int(input("Enter Type: "))
-        if unit_type_loc == 1:
-            self.is_abend = True
-        elif unit_type_loc == 2:
-            self.is_abend = False
-        return self.is_abend
-
-    def query_4ch_type(self) -> bool:
-        if self.psc is None:
-            raise RuntimeError("PSC adapter not initialized before \n"
-                               "calling query_psc_config()")
-        print("Choose unit type: \n\n 1. AR-R2 AR-SD-SF \n\n 2. AR-R1 Standard\n")
-        unit_type_loc = int(input("Enter Type: "))
-        if unit_type_loc == 1:
-            self.is_SD_SF = True
-        elif unit_type_loc == 2:
-            self.is_SD_SF = False
-        return self.is_SD_SF
 
     def query_psc_config(self) -> None:
         """Get values from PSC about unit type from PVs"""
@@ -120,6 +93,30 @@ class DUT:
         self.resolution = self.psc.get_resolution()
         self.bandwidth = self.psc.get_bandwidth()
         self.polarity = self.psc.get_polarity()
+
+        # Test that EEPROM Values aren't Zeroed...
+        print("\n\n\n Reading EEPROM...")
+        print(f"EEPROM # Of Channels: {self.num_channels}")
+        print(f"EEPROM Resolution: {self.resolution}")
+        print(f"EEPROM Bandwidth: {self.bandwidth}")
+        print(f"EEPROM Polarity: {self.polarity}")
+        print("\n\n\n")
+        if self.num_channels not in [2, 4]:
+            raise ConnectionError("Could not detect valid PSC channels at "
+                                  f"{self.pv_prefix}. Check EEPROM is "
+                                  "Configured, PSC is connected. ")
+        if self.resolution[:2] not in ["HS", "MS"]:
+            raise ConnectionError("Could not detect valid PSC at "
+                                  f"{self.pv_prefix}. Check EEPROM is "
+                                  "Configured, PSC is connected. ")
+        if self.bandwidth[:1] not in ["S", "F"]:
+            raise ConnectionError("Could not detect valid PSC at "
+                                  f"{self.pv_prefix}. Check EEPROM is "
+                                  "Configured, PSC is connected. ")
+        if self.polarity[:1] not in ["B", "U"]:
+            raise ConnectionError("Could not detect valid PSC at "
+                                  f"{self.pv_prefix}. Check EEPROM is "
+                                  "Configured, PSC is connected. ")
 
     def make_report_dir(self, base_dir="."):
         """Create shipment directory"""

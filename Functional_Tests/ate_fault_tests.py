@@ -12,7 +12,7 @@ from reportlab.platypus import Table, Spacer
 from reportlab.lib import colors
 
 from initialize_dut import DUT
-from ate_epics import ATE
+from EPICS_Adapters.ate_epics import ATE
 
 # =============================================================================
 # camonitor helpers
