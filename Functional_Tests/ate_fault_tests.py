@@ -64,8 +64,8 @@ class EpicsMonitor:
         Reads lines from the subprocess stdout and pushes them to the queue.
         """
         try:
-            for line in iter(pipe.readline, b""):
-                self.queue.put(line.decode(errors="ignore"))
+            for line in iter(pipe.readline, ""):
+                self.queue.put(line)
         except (ValueError, OSError):
             pass  # Process likely killed
         finally:
@@ -78,6 +78,7 @@ class EpicsMonitor:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             bufsize=1,  # Line buffered
+            text=True,
             close_fds=True  # Ensure file descriptors aren't leaked
         )
         self.running = True

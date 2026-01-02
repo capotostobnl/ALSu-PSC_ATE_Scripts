@@ -5,7 +5,7 @@ M. Capotosto 11/11/2025
 
 from EPICS_Adapters.ate_epics import ATE
 from initialize_dut import DUT
-from report_generator import start_report, finalize_report, \
+from test_report_generator import start_report, finalize_report, \
     channel_section
 from ate_init import ate_init
 from Functional_Tests.evr_timing_test import evr_timing_test

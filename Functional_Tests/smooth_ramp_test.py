@@ -13,7 +13,7 @@ from reportlab.platypus import Paragraph, Spacer
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.enums import TA_CENTER
 
-from report_generator import ReportContext
+from test_report_generator import ReportContext
 from initialize_dut import DUT
 from EPICS_Adapters.ate_epics import ATE
 
@@ -75,7 +75,7 @@ def smooth_ramp_test(dut: DUT, ate: ATE, section: list,
     ate.set_ignd_value(ignd_sp, chan, dut)
     sleep(3)
 
-    wfm_pvs = dut.psc.wfm_pvs
+    wfm_pvs = dut.psc.WfmPV
     dut.psc.set_op_mode(chan, 0)  # Set PS Mode to SMOOTH
     sleep(1)
 
