@@ -180,7 +180,7 @@ def jump_test(dut: DUT, ate: ATE, section: list, chan: int,
         plt.pause(0.1)
 
     base_style = ctx.styles["Normal"]
-    mstr = "Jump Test Results:"
+    mstr = f"Jump Test Results: Ch{chan}"
     paragraph_style = ParagraphStyle(
         "Custom",
         parent=base_style,
@@ -190,7 +190,7 @@ def jump_test(dut: DUT, ate: ATE, section: list, chan: int,
         alignment=TA_CENTER,
     )
 
-    mstr = f"Jump Test Results: {dut.model.display_name} CH{chan}"
+    mstr = f"Jump Test Results: CH{chan}"
     title_para = Paragraph(mstr, paragraph_style)
 
     # Start the reporting

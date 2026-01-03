@@ -149,7 +149,7 @@ def smooth_ramp_test(dut: DUT, ate: ATE, section: list,
         plt.pause(0.1)
 
     base_style = ctx.styles["Normal"]
-    mstr = "Smooth Test Results:"
+    mstr = f"Smooth Test Results: CH{chan}"
     paragraph_style = ParagraphStyle(
         "Custom",
         parent=base_style,
