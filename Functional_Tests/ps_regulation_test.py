@@ -66,6 +66,7 @@ def ps_regulation_test(dut: DUT, ate: ATE, section: list, chan: int,
     """
     assert dut.psc is not None
     print(f"Preparing PSC Channel {chan} for Regulation test...")
+    dut.psc.set_fault_mask_all(chan, 0)
     ate.set_ignd_channel(chan)
     ate.set_ignd_value(0, chan, dut)
     print("ATE ignd Set...")
@@ -76,32 +77,12 @@ def ps_regulation_test(dut: DUT, ate: ATE, section: list, chan: int,
     dut.psc.set_dac_setpt(chan, 0)
 
     for i in range(1, dut.num_channels+1):
+        dut.psc.set_fault_mask_all(chan, 0)
         dut.psc.set_power_on1(i, 1)
         dut.psc.set_enable_on2(i, 1)
         dut.psc.set_op_mode(i, 0)
         dut.psc.set_park(i, 0)
         dut.psc.set_dac_setpt(i, 0)
-    while True:
-        # Check for any faults on all 4 channels. If there's a fault, clear
-        # before continuing...
-        all_clear = True
-
-        for ch in range(1, dut.num_channels+1):   # 1, 2, 3, 4
-            faults = dut.psc.get_latched_faults(ch)
-
-            if faults != 0:
-                print(f"Clearing latched faults on CH{ch}: 0x{faults:X}")
-
-                dut.psc.set_reset(ch, 1)
-                dut.psc.clear_faults(ch, 1)
-                sleep(0.5)
-                dut.psc.clear_faults(ch, 0)
-                dut.psc.set_reset(ch, 0)
-
-                all_clear = False   # keep looping until all channels clear
-
-        if all_clear:
-            break
 
     sleep(0.2)   # optional short slowdown
 

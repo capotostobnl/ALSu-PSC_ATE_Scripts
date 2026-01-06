@@ -277,6 +277,9 @@ class PSC:
     def set_fault_mask(self, bit: int, ch: int, val: int | bool) -> bool:
         """Set a specific Fault Mask bit."""
         return self.safe_put(f"FaultMask:B{bit}-SP", val, ch=ch)
+    
+    def set_fault_mask_all(self, ch: int, mask: int) -> bool:
+        return self.safe_put("FaultMask-SP", value=int(mask), ch=ch)
 
     def get_live_faults(self, ch: int):
         """Get the Live Fault Status Word."""

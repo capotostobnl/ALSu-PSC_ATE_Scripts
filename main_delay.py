@@ -2,7 +2,7 @@
 
 M. Capotosto 11/11/2025
 """
-#from time import sleep
+from time import sleep
 from EPICS_Adapters.ate_epics import ATE
 from initialize_dut import DUT
 from test_report_generator import start_report, finalize_report, \
@@ -34,8 +34,8 @@ if __name__ == "__main__":
 
     ctx, pdf_path = start_report(dut)
 
- #   print("sleeping 20 minutes...")
- #   sleep(1200)
+    print("sleeping 20 minutes...")
+    sleep(1200)
     evr_timing_test(dut, ctx)
     ate_init(ate, dut)
 
