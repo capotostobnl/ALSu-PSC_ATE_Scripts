@@ -1,12 +1,12 @@
 # **PSC Automated Test Environment (ATE) – Test Suite**
 
 This repository contains the full automated test environment (ATE) and reporting framework for **ALSu Power Supply Controller (PSC)** validation.  
-It performs end-to-end testing of PSC hardware, ATE interfaces, EVR timing, DCCT/IGND/SPARE regulation, FOFB behavior, and produces a professionally formatted PDF report for shipment documentation.
+It performs end-to-end testing of PSC hardware, ATE interfaces, EVR timing, DCCT/IGND/SPARE regulation, FOFB behavior, and produces a formatted PDF report for shipment documentation.
 
 The system integrates:
 
-- **PSC EPICS IOC communication** (`psc_epics.py`)
-- **ATE Tester IOC communication** (`ate_epics.py`)
+- **PSC EPICS IOC communication** (`EPICS_Adapters/psc_epics.py`)
+- **ATE Tester IOC communication** (`EPICS_Adapters/ate_epics.py`)
 - Automated test modules (jump, smooth ramp, regulation, EVR timing, FOFB)
 - Auto-generated reports with plots and pass/fail tables
 - Automated directory management and shipment logging
@@ -16,26 +16,28 @@ The system integrates:
 ## **Repository Structure**
 
 ```
-├── main.py                     # Top-level test runner (entry point)
-├── initialize_dut.py           # DUT class: PSC info, directory management, PV prefix, etc.
-├── report_generator.py         # PDF generation, formatting, section helpers
+├── main.py                          # Top-level test runner (Entry Point)
+├── initialize_dut.py                # DUT Config: Serial numbers, PV prefixes, directory logic
+├── report_generator.py              # ReportLab PDF engine, context managers, and styling
+├── psc_models.py                    # Data models representing PSC states/signals
 │
-├── ate_epics.py                # EPICS adapter for ATE Tester IOC
-├── psc_epics.py                # EPICS adapter for PSC IOC (waveforms, setpoints, state)
+├── EPICS_Adapters/                  # Drivers for Hardware Communication
+│   ├── ate_epics.py                 # Driver: Robust adapter for ATE Tester IOC
+│   └── psc_epics.py                 # Driver: Adapter for PSC IOC (waveforms, setpoints)
 │
-├── ate_init.py                 # ATE initialization & channel setup
-├── ate_fault_tests.py          # Automated ATE fault injection and detection tests
-├── jump_test.py                # PSC jump test (transient response, DCCT, IGND, SPARE)
-├── smooth_ramp_test.py         # PSC smooth ramp characterization
-├── ps_regulation_test.py       # Regulation tests using PSC DAC loopback / rails
-├── evr_timing_test.py          # EVR 1 Hz timestamp verification
-├── fofb_test.py                # FOFB Daisy Packet monotonicity & RX timing test
+├── Functional_Tests/                # Individual Test Modules
+│   ├── ate_fault_tests.py           # Hardware Interlock Validation (FLT1/2/Spare/DCCT)
+│   ├── evr_timing_test.py           # EVR 1Hz Timestamp monotonicity check
+│   ├── fofb_test.py                 # FOFB Integration: UDP packet capture & HDF5 logging
+│   ├── jump_test.py                 # Transient Response Analysis (Step response, Settling)
+│   ├── ps_regulation_test.py        # DAC Loopback & Regulation verification
+│   ├── smooth_ramp_test.py          # Ramp Tracking & Stability Analysis
+│   ├── caen_fast_genpacket.c        # Low-level UDP packet generator (C source)
+│   └── caen_fast_genpacket_loop_inf.sh  # Shell script wrapper for continuous packet generation
 │
-├── caen_fast_genpacket.c       # Low-level UDP packet generator (used by FOFB test)
-├── caen_fast_genpacket_loop_inf.sh  # Continuous DAISY packet loop script
-│
-├── requirements.txt            # Python dependencies
-└── README.md                   # This documentation
+├── ate_init.py                      # Initialization sequence (Safety defaults, Gain setup)
+├── requirements.txt                 # Python dependencies
+└── README.md                        # Project documentation
 ```
 
 ---
@@ -61,7 +63,7 @@ The test sequence inside `main.py`:
    - Configures gains, polarity, and calibration state
 
 3. **Tests Executed**
-   - **EVR Timing Test** *(optional)*
+   - **EVR Timing Test**
    - **ATE Fault Tests**  
      - FLT1, FLT2, SPARE, and DCCT fault injection
    - **PSC Regulation Test**
@@ -80,7 +82,7 @@ The test sequence inside `main.py`:
 
 ## **Key Modules**
 
-### **`psc_epics.py`**
+### **`EPICS_Adapters/psc_epics.py`**
 Handles PSC-specific PV interactions:
 - DAC/SP, GND/SP, MODE, RATE
 - DCCT1/2 waveforms
@@ -88,7 +90,7 @@ Handles PSC-specific PV interactions:
 - Snapshot triggers and waveform extraction
 - Fault masks, resets, live & latched faults
 
-### **`ate_epics.py`**
+### **`EPICS_Adapters/ate_epics.py`**
 Abstraction layer for the ATE tester IOC:
 - Sets IGND channel and IGND setpoint
 - DCCT fault routing
@@ -96,34 +98,34 @@ Abstraction layer for the ATE tester IOC:
 - Tester2 command interface
 - Tester status readback
 
-### **`ate_fault_tests.py`**
+### **`Functional_Tests/ate_fault_tests.py`**
 Fault injection & verification:
 - Checks live + latched fault bits
 - Uses bit masks (0x80, 0x100, 0x200, 0x40)
 - Clears faults and verifies zero state
 - Builds Pass/Fail report table
 
-### **`jump_test.py`**
+### **`Functional_Tests/jump_test.py`**
 Transient measurement of PSC performance:
 - Detects fast transitions (diff → argmax)
 - Extracts pre/post transition windows
 - Plots DAC, DCCT1/2, ERR, REG, VOLT, GND, SPARE
 
-### **`smooth_ramp_test.py`**
+### **`Functional_Tests/smooth_ramp_test.py`**
 Smooth-ramp behavior & loop stability:
 - Slow directional ramps (positive/negative)
 - IGND stability verification
 - DCCT and ERR tracking
 
-### **`ps_regulation_test.py`**
+### **`Functional_Tests/ps_regulation_test.py`**
 Regulation loop stability tests:
 - DAC and Regulation waveform capture
 - Overshoot/settling visualization
 
-### **`evr_timing_test.py`**
+### **`Functional_Tests/evr_timing_test.py`**
 Verifies EVR 1 Hz timestamps increment correctly.
 
-### **`fofb_test.py`**
+### **`Functional_Tests/fofb_test.py`**
 Daisy packet monotonicity test:
 - Uses CAEN generator (C version + shell script)
 - Validates packet ordering & RX timing
@@ -143,6 +145,11 @@ Includes:
 - `matplotlib`
 - `pyepics`
 - `reportlab`
+- `h5py`
+
+## **Compile the Packet Generator**
+Compile the caen_fast_genpacket.c to caen_fast_genpacket
+Set the caen_fast_genpacket_loop_inf.sh to eXecutable
 
 ---
 
@@ -172,11 +179,9 @@ Shipment #{N}/		     # If it does not yet exist
 ---
 
 ## **Contact**
+Maintainer: **Michael Capotosto**
 
 NSLS-II Diagnostics & Instrumentation Group  
 Brookhaven National Laboratory  
-PSC ATE Maintainer: **Michael Capotosto**
 
 ---
-
-
